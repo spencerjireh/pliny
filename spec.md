@@ -744,10 +744,10 @@ Backup wiring is deferred for v1 — Coolify's scheduled `pg_dump` plus RustFS b
 
 ## v1 Build Order
 
-1. Alembic + Postgres schema (items, item_sources, item_redirects, content, chunks, embeddings_1536, entities, item_entities, tags, item_tags, processing_jobs). `BlobStore` interface (filesystem impl first, then RustFS).
-2. FastAPI scaffolding, `/items` ingest endpoint with **syntactic-only** URL canonicalization + dedup + `item_sources`. `hmac.compare_digest` API-key dependency. `/healthz`. Multi-item ingest from a single source_ref (text + URL splitting).
-3. Worker loop with two pools, claim_token, NOTIFY/LISTEN, exponential backoff, and the stale-job sweeper. Status endpoint computes from versions + jobs and honors `item_redirects`.
-4. `extract` stage for text and URLs (initially without Playwright snapshot — fetch raw HTML directly). Image OCR + caption via vision; perceptual hash computed in the same stage so `metadata.possible_duplicate_of` is populated from day one.
+1. **[done]** Alembic + Postgres schema (items, item_sources, item_redirects, content, chunks, embeddings_1536, entities, item_entities, tags, item_tags, processing_jobs). `BlobStore` interface (filesystem impl first, then RustFS).
+2. **[done]** FastAPI scaffolding, `/items` ingest endpoint with **syntactic-only** URL canonicalization + dedup + `item_sources`. `hmac.compare_digest` API-key dependency. `/healthz`. Multi-item ingest from a single source_ref (text + URL splitting).
+3. **[done]** Worker loop with two pools, claim_token, NOTIFY/LISTEN, exponential backoff, and the stale-job sweeper. Status endpoint computes from versions + jobs and honors `item_redirects`.
+4. **[done]** `extract` stage for text and URLs (initially without Playwright snapshot — fetch raw HTML directly). Image OCR + caption via vision; perceptual hash computed in the same stage so `metadata.possible_duplicate_of` is populated from day one.
 5. `summarize` and `chunk` stages.
 6. `embed` stage with pgvector and partial HNSW indexes per `(granularity, model_name)`.
 7. `/search` endpoint with hybrid RRF retrieval, mode-specific cursor, `ts_headline` highlights, filters (including `possible_duplicate=true`).
