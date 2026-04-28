@@ -95,14 +95,27 @@ class FakeLLM:
     def __init__(self) -> None:
         self.vision_calls: list[dict[str, object]] = []
         self.vision_response_text: str = "OCR:\n(none)\n\nCAPTION:\nA test image."
+        self.chat_calls: list[dict[str, object]] = []
+        self.chat_response_text: str = (
+            '{"title":"Test Item","summary":"Test summary.","tags":["test","example"]}'
+        )
+        self.embed_calls: list[dict[str, object]] = []
+        self.embed_response_vectors: list[list[float]] | None = None
 
-    async def chat(self, *args: object, **kwargs: object) -> object:
+    async def chat(self, **kwargs: object) -> object:
         from pliny.llm.base import ChatResponse
 
-        return ChatResponse(text="", usage={"prompt_tokens": 0, "completion_tokens": 0})
+        self.chat_calls.append(kwargs)
+        return ChatResponse(
+            text=self.chat_response_text,
+            usage={"prompt_tokens": 100, "completion_tokens": 50},
+        )
 
-    async def embed(self, *args: object, **kwargs: object) -> list[list[float]]:
-        return []
+    async def embed(self, texts: list[str], *, model: str) -> list[list[float]]:
+        self.embed_calls.append({"texts": list(texts), "model": model})
+        if self.embed_response_vectors is not None:
+            return [list(v) for v in self.embed_response_vectors[: len(texts)]]
+        return [[0.0] * 1536 for _ in texts]
 
     async def vision(self, **kwargs: object) -> object:
         from pliny.llm.base import ChatResponse
