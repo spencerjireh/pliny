@@ -1,6 +1,3 @@
-import hashlib
-
-import httpx
 import trafilatura
 from sqlalchemy import text as sql_text
 
@@ -8,32 +5,17 @@ from pliny.db.models import Item
 from pliny.pipeline.context import StageContext
 from pliny.pipeline.stages import STAGE_VERSIONS
 
-_USER_AGENT = "pliny/0.1 (+https://example.invalid/pliny)"
-_TIMEOUT = 30.0
-
 
 async def run(ctx: StageContext, item: Item) -> None:
-    if item.canonical_url is None:
-        raise ValueError(f"url item {ctx.item_id} has no canonical_url")
+    """Extract text from the SingleFile HTML the snapshot stage stored at raw_ref.
 
-    async with httpx.AsyncClient(
-        follow_redirects=True,
-        timeout=_TIMEOUT,
-        headers={"User-Agent": _USER_AGENT},
-    ) as client:
-        resp = await client.get(item.canonical_url)
-        resp.raise_for_status()
-        body_bytes = resp.content
-
+    URL items always go through `snapshot` first, which is responsible for
+    fetching/rendering the page and writing rendered bytes to
+    `items.raw_ref`. Extract reads those bytes and runs trafilatura.
+    """
     if item.raw_ref is None:
-        new_hash = hashlib.sha256(body_bytes).hexdigest()
-        ref = f"raw/{new_hash}"
-        await ctx.blob.put(ref, body_bytes)
-        await ctx.db.execute(
-            sql_text("UPDATE items SET raw_ref = :ref WHERE id = :id"),
-            {"ref": ref, "id": ctx.item_id},
-        )
-
+        raise RuntimeError(f"url item {ctx.item_id} has no raw_ref; snapshot must run first")
+    body_bytes = await ctx.blob.get(item.raw_ref)
     html = body_bytes.decode("utf-8", errors="replace")
     extracted = trafilatura.extract(
         html,

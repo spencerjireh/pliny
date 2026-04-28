@@ -1,15 +1,13 @@
 import logging
 import uuid
 
-import httpx
 import pytest
-import respx
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import pliny.pipeline.extract  # noqa: F401
 from pliny.api import deps
-from pliny.db.models import Content, Item
+from pliny.db.models import Content
 from pliny.db.queries import insert_item
 from pliny.logging import get_logger
 from pliny.pipeline.context import StageContext
@@ -40,23 +38,26 @@ def logger() -> logging.LoggerAdapter[logging.Logger]:
     return get_logger("test")
 
 
-@respx.mock
-async def test_extract_url_fetches_and_extracts(
+async def test_extract_url_reads_raw_ref(
     db_session: AsyncSession, logger: logging.LoggerAdapter[logging.Logger]
 ) -> None:
+    """After snapshot pre-populates raw_ref, extract reads the blob and runs
+    trafilatura on the stored bytes — no network fetch."""
     await _truncate(db_session)
     canonical = "https://example.com/article"
+
+    blob = deps.get_blob()
+    raw_ref = "raw/abc123"
+    await blob.put(raw_ref, SAMPLE_HTML.encode("utf-8"))
+
     item = await insert_item(
         db_session,
         type="url",
         content_hash=uuid.uuid4().hex,
         canonical_url=canonical,
+        raw_ref=raw_ref,
     )
     await db_session.commit()
-
-    respx.get(canonical).mock(
-        return_value=httpx.Response(200, text=SAMPLE_HTML, headers={"content-type": "text/html"})
-    )
 
     sm = deps.get_session_maker()
     async with sm() as session:
@@ -66,7 +67,7 @@ async def test_extract_url_fetches_and_extracts(
             attempt=1,
             claim_token=uuid.uuid4(),
             db=session,
-            blob=deps.get_blob(),
+            blob=blob,
             llm=None,
             logger=logger,
         )
@@ -81,27 +82,20 @@ async def test_extract_url_fetches_and_extracts(
     assert content.extraction_method == "trafilatura"
     assert content.extract_version == STAGE_VERSIONS["extract"]
 
-    refreshed = (await db_session.execute(select(Item).where(Item.id == item.id))).scalar_one()
-    await db_session.refresh(refreshed)
-    assert refreshed.raw_ref is not None
-    assert refreshed.raw_ref.startswith("raw/")
 
-
-@respx.mock
-async def test_extract_url_failed_response_raises(
+async def test_extract_url_without_raw_ref_raises(
     db_session: AsyncSession, logger: logging.LoggerAdapter[logging.Logger]
 ) -> None:
+    """A URL item that reaches extract before snapshot ran is a programming
+    error — we surface it loudly rather than silently fetching the network."""
     await _truncate(db_session)
-    canonical = "https://example.com/dead"
     item = await insert_item(
         db_session,
         type="url",
         content_hash=uuid.uuid4().hex,
-        canonical_url=canonical,
+        canonical_url="https://example.com/never-snapshotted",
     )
     await db_session.commit()
-
-    respx.get(canonical).mock(return_value=httpx.Response(500))
 
     sm = deps.get_session_maker()
     async with sm() as session:
@@ -115,5 +109,5 @@ async def test_extract_url_failed_response_raises(
             llm=None,
             logger=logger,
         )
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(RuntimeError, match="raw_ref"):
             await get_handler("extract")(ctx)
