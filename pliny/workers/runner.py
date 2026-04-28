@@ -205,6 +205,7 @@ async def run_one_job(
     pool_name: str,
     blob: BlobStore,
     llm: object | None,
+    neo4j: object | None = None,
     on_no_job_log: bool = False,
 ) -> bool:
     """Claim and run one job. Returns True if a job was processed."""
@@ -246,6 +247,7 @@ async def run_one_job(
                 blob=blob,
                 llm=llm,  # type: ignore[arg-type]
                 logger=log,
+                neo4j=neo4j,
             )
             handler = get_handler(claimed.stage)
             await handler(ctx)

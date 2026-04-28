@@ -20,6 +20,7 @@ dependencies = [
     "openai>=1.55",
     "python-multipart>=0.0.20",
     "python-json-logger>=2.0",
+    "neo4j>=5.14",
 ]
 
 [project.scripts]
@@ -29,7 +30,7 @@ pliny = "pliny.cli:main"
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
-    "testcontainers[postgres]>=4.8",
+    "testcontainers[postgres,neo4j]>=4.8",
     "ruff>=0.8",
     "pyright>=1.1.390",
     "pre-commit>=4.0",

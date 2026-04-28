@@ -15,16 +15,15 @@ services:
       timeout: 3s
       retries: 10
 
-  # neo4j: enable in step 8 (entities + graph_sync)
-  # neo4j:
-  #   image: neo4j:5
-  #   environment:
-  #     NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
-  #   ports:
-  #     - "7474:7474"
-  #     - "7687:7687"
-  #   volumes:
-  #     - neo4j_data:/data
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
 
   # rustfs: enable in step 10 (snapshot)
   # rustfs:
@@ -39,5 +38,5 @@ services:
 
 volumes:
   postgres_data:
-  # neo4j_data:
+  neo4j_data:
   # rustfs_data:

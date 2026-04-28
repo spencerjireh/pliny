@@ -1,5 +1,6 @@
 import os
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import pytest
 from alembic import command
@@ -7,10 +8,13 @@ from alembic.config import Config
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from testcontainers.neo4j import Neo4jContainer
 from testcontainers.postgres import PostgresContainer
 
 from pliny.api import deps
 from pliny.config import get_settings
+
+NEO4J_TEST_PASSWORD = "testpass"
 
 
 @pytest.fixture(scope="session")
@@ -28,9 +32,26 @@ def test_database_url(postgres_container: PostgresContainer) -> str:
     return postgres_container.get_connection_url()
 
 
+@pytest.fixture(scope="session")
+def neo4j_container() -> Iterator[Neo4jContainer]:
+    container = Neo4jContainer("neo4j:5", password=NEO4J_TEST_PASSWORD)
+    container.start()
+    try:
+        yield container
+    finally:
+        container.stop()
+
+
+@pytest.fixture(scope="session")
+def test_neo4j_uri(neo4j_container: Neo4jContainer) -> str:
+    return neo4j_container.get_connection_url()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _env_override(
-    test_database_url: str, tmp_path_factory: pytest.TempPathFactory
+    test_database_url: str,
+    test_neo4j_uri: str,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[None]:
     blob_root = tmp_path_factory.mktemp("blob")
     prev = {
@@ -38,11 +59,17 @@ def _env_override(
         "API_KEY": os.environ.get("API_KEY"),
         "BLOB_ROOT": os.environ.get("BLOB_ROOT"),
         "OPENAI_DAILY_USD_CAP": os.environ.get("OPENAI_DAILY_USD_CAP"),
+        "NEO4J_URI": os.environ.get("NEO4J_URI"),
+        "NEO4J_USER": os.environ.get("NEO4J_USER"),
+        "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD"),
     }
     os.environ["DATABASE_URL"] = test_database_url
     os.environ["API_KEY"] = "test-key"
     os.environ["BLOB_ROOT"] = str(blob_root)
     os.environ["OPENAI_DAILY_USD_CAP"] = "100"
+    os.environ["NEO4J_URI"] = test_neo4j_uri
+    os.environ["NEO4J_USER"] = "neo4j"
+    os.environ["NEO4J_PASSWORD"] = NEO4J_TEST_PASSWORD
     get_settings.cache_clear()
     deps.reset_state()
     yield
@@ -89,6 +116,26 @@ async def db_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+@pytest.fixture
+async def neo4j_driver() -> AsyncIterator[Any]:
+    from pliny.db import neo4j as neo4j_mod
+    from pliny.graph import schema as graph_schema
+
+    neo4j_mod.force_reset_driver_for_tests()
+    graph_schema.reset_ensured_for_tests()
+    drv = neo4j_mod.get_driver()
+    yield drv
+
+
+@pytest.fixture(autouse=True)
+async def _reset_neo4j(neo4j_driver: Any) -> None:
+    async with neo4j_driver.session() as s:
+        await s.run("MATCH (n) DETACH DELETE n")
+
+
+ChatResponseProvider = Any  # callable[[dict], str] | None
+
+
 class FakeLLM:
     """Test double for the LLM Protocol. Records calls and returns canned responses."""
 
@@ -99,6 +146,11 @@ class FakeLLM:
         self.chat_response_text: str = (
             '{"title":"Test Item","summary":"Test summary.","tags":["test","example"]}'
         )
+        self.entities_response_text: str = (
+            '{"entities":[{"name":"Test Entity","type":"concept",'
+            '"mention_text":"test","confidence":0.9}]}'
+        )
+        self.chat_response_provider: ChatResponseProvider = None
         self.embed_calls: list[dict[str, object]] = []
         self.embed_response_vectors: list[list[float]] | None = None
 
@@ -106,8 +158,12 @@ class FakeLLM:
         from pliny.llm.base import ChatResponse
 
         self.chat_calls.append(kwargs)
+        if self.chat_response_provider is not None:
+            text = self.chat_response_provider(kwargs)
+        else:
+            text = self.chat_response_text
         return ChatResponse(
-            text=self.chat_response_text,
+            text=text,
             usage={"prompt_tokens": 100, "completion_tokens": 50},
         )
 

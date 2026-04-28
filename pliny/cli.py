@@ -44,6 +44,7 @@ async def _run_worker_async(pool: Literal["fast", "slow"]) -> None:
         concurrency=concurrency,
         blob=deps.get_blob(),
         llm=deps.get_llm(),
+        neo4j=deps.get_neo4j_driver(),
     )
 
     loop = asyncio.get_running_loop()
