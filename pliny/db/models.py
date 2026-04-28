@@ -43,7 +43,9 @@ class Item(Base):
     raw_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    meta: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
+    meta: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB(none_as_null=True), nullable=True
+    )
 
     snapshot_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"

@@ -1,11 +1,14 @@
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select, text
+from sqlalchemy import insert, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pliny.db.models import Item, ItemSource, ProcessingJob
+from pliny.db.models import Chunk, Item, ItemSource, ItemTag, ProcessingJob, Tag
+
+if TYPE_CHECKING:
+    from pliny.pipeline.chunk.chunker import ChunkPiece
 
 
 async def find_item_by_content_hash(session: AsyncSession, content_hash: str) -> Item | None:
@@ -100,3 +103,54 @@ async def notify(session: AsyncSession, channel: str, payload: str = "") -> None
     await session.execute(
         text("SELECT pg_notify(:channel, :payload)").bindparams(channel=channel, payload=payload)
     )
+
+
+async def replace_chunks(
+    session: AsyncSession,
+    *,
+    item_id: uuid.UUID,
+    pieces: "list[ChunkPiece]",
+    version: int,
+) -> None:
+    """Delete-and-replace all chunks for an item (cascades to embeddings)."""
+    await session.execute(
+        text("DELETE FROM chunks WHERE item_id = :id"),
+        {"id": item_id},
+    )
+    if not pieces:
+        return
+    await session.execute(
+        insert(Chunk),
+        [
+            {
+                "id": uuid.uuid4(),
+                "item_id": item_id,
+                "chunk_index": p.index,
+                "text": p.text,
+                "token_count": p.token_count,
+                "chunker_version": version,
+            }
+            for p in pieces
+        ],
+    )
+
+
+async def upsert_tag(session: AsyncSession, *, name: str) -> uuid.UUID:
+    """Insert tag if missing; return its id."""
+    stmt = (
+        pg_insert(Tag)
+        .values(id=uuid.uuid4(), name=name)
+        .on_conflict_do_update(index_elements=["name"], set_={"name": name})
+        .returning(Tag.id)
+    )
+    return (await session.execute(stmt)).scalar_one()
+
+
+async def link_item_tag(
+    session: AsyncSession,
+    *,
+    item_id: uuid.UUID,
+    tag_id: uuid.UUID,
+) -> None:
+    stmt = pg_insert(ItemTag).values(item_id=item_id, tag_id=tag_id).on_conflict_do_nothing()
+    await session.execute(stmt)
