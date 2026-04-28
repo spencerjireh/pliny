@@ -1,6 +1,6 @@
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
-from pliny.api.routes import health
+from pliny.api.routes import health, items
 from pliny.logging import configure_logging
 
 
@@ -10,8 +10,8 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, tags=["health"])
 
-    v1 = FastAPI(title="Pliny v1", version="0.1.0")
-    app.mount("/v1", v1)
-    app.state.v1 = v1
+    v1 = APIRouter(prefix="/v1")
+    v1.include_router(items.router, prefix="/items", tags=["items"])
+    app.include_router(v1)
 
     return app

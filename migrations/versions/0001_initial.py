@@ -101,10 +101,16 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
+    # Partial unique on (item_id, source, source_ref) -- spec.md described this
+    # constraint as (source, source_ref) but a single ingest can produce
+    # multiple items sharing one source_ref (e.g. a Telegram message with text
+    # + URL splits into a text item and a URL item per spec.md "Capture types").
+    # Including item_id preserves idempotent retries (same item, same ref ->
+    # no-op insert) without blocking the multi-item case.
     op.create_index(
         "item_sources_source_ref_uniq",
         "item_sources",
-        ["source", "source_ref"],
+        ["item_id", "source", "source_ref"],
         unique=True,
         postgresql_where=sa.text("source_ref IS NOT NULL"),
     )

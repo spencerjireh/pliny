@@ -107,6 +107,7 @@ class ItemSource(Base):
     __table_args__ = (
         Index(
             "item_sources_source_ref_uniq",
+            "item_id",
             "source",
             "source_ref",
             unique=True,
