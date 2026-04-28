@@ -106,8 +106,12 @@ async def mark_done_and_enqueue_downstream(
     *,
     claimed: ClaimedJob,
     item_type: str,
+    skip_downstream: bool = False,
 ) -> bool:
     """Mark the job done, bump items.<stage>_version, enqueue downstream.
+
+    `skip_downstream` lets a handler (e.g. snapshot after a redirect-collision
+    merge) finalize the job without enqueueing the next stage.
 
     Returns True if the row was actually updated; False if claim_token mismatched
     (meaning a reprocess or sweeper invalidated us mid-flight).
@@ -131,6 +135,9 @@ async def mark_done_and_enqueue_downstream(
         text(f"UPDATE items SET {version_col} = :v WHERE id = :id"),
         {"v": version, "id": claimed.item_id},
     )
+
+    if skip_downstream:
+        return True
 
     for next_stage in downstream_stages(item_type, claimed.stage):
         if not await _prereqs_satisfied(session, item_id=claimed.item_id, stage=next_stage):
@@ -206,6 +213,7 @@ async def run_one_job(
     blob: BlobStore,
     llm: object | None,
     neo4j: object | None = None,
+    snapshotter: object | None = None,
     on_no_job_log: bool = False,
 ) -> bool:
     """Claim and run one job. Returns True if a job was processed."""
@@ -248,11 +256,15 @@ async def run_one_job(
                 llm=llm,  # type: ignore[arg-type]
                 logger=log,
                 neo4j=neo4j,
+                snapshotter=snapshotter,
             )
             handler = get_handler(claimed.stage)
             await handler(ctx)
             updated = await mark_done_and_enqueue_downstream(
-                session, claimed=claimed, item_type=item_type
+                session,
+                claimed=claimed,
+                item_type=item_type,
+                skip_downstream=ctx.skip_downstream,
             )
             await session.commit()
             if updated:

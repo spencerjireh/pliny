@@ -32,12 +32,14 @@ class WorkerPool:
         blob: BlobStore,
         llm: object | None = None,
         neo4j: object | None = None,
+        snapshotter: object | None = None,
     ) -> None:
         self.pool_name = pool_name
         self.concurrency = concurrency
         self.blob = blob
         self.llm = llm
         self.neo4j = neo4j
+        self.snapshotter = snapshotter
         self._settings = get_settings()
         self._engine = create_async_engine(self._settings.database_url, future=True)
         self._sm = async_sessionmaker(self._engine, expire_on_commit=False)
@@ -81,6 +83,7 @@ class WorkerPool:
                     blob=self.blob,
                     llm=self.llm,
                     neo4j=self.neo4j,
+                    snapshotter=self.snapshotter,
                 )
             except Exception as exc:
                 log.warning("slot_error", extra={"slot": index, "error": repr(exc)})

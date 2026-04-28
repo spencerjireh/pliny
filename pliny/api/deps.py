@@ -19,6 +19,7 @@ _session_maker: async_sessionmaker[AsyncSession] | None = None
 _blob_store: BlobStore | None = None
 _llm: object | None = None
 _neo4j_driver: object | None = None
+_snapshotter: object | None = None
 
 
 def get_engine() -> AsyncEngine:
@@ -77,14 +78,29 @@ def get_neo4j_driver() -> object:
     return _neo4j_driver
 
 
+def get_snapshotter() -> object:
+    """Return the configured Snapshotter. Lazily constructed.
+
+    Tests substitute a FakeSnapshotter directly into WorkerPool; this getter
+    is only invoked from the CLI when a real worker process boots.
+    """
+    global _snapshotter
+    if _snapshotter is None:
+        from pliny.snapshot.playwright_impl import PlaywrightSnapshotter
+
+        _snapshotter = PlaywrightSnapshotter()
+    return _snapshotter
+
+
 def reset_state() -> None:
     """Reset module-level singletons. Used by tests to swap engines."""
-    global _engine, _session_maker, _blob_store, _llm, _neo4j_driver
+    global _engine, _session_maker, _blob_store, _llm, _neo4j_driver, _snapshotter
     _engine = None
     _session_maker = None
     _blob_store = None
     _llm = None
     _neo4j_driver = None
+    _snapshotter = None
     from pliny.graph import schema as graph_schema
 
     graph_schema.reset_ensured_for_tests()

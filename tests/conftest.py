@@ -186,3 +186,45 @@ class FakeLLM:
 @pytest.fixture
 def fake_llm() -> FakeLLM:
     return FakeLLM()
+
+
+# Tiny valid 1x1 PNG (the smallest possible valid PNG).
+_TINY_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\x0f"
+    b"\x00\x00\x01\x01\x00\x05\xfe\x02\xfe\xa9\xb6\x9b\x9b\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+class FakeSnapshotter:
+    """Test double for the Snapshotter Protocol. Records calls and returns
+    deterministic bytes / metadata so integration tests stay fast.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.rendered_html: bytes = b"<html><body><p>fake snapshot</p></body></html>"
+        self.screenshot_png: bytes = _TINY_PNG
+        self.page_title: str | None = "Fake Page"
+        # If set, capture_html ignores the input URL and returns this final_url.
+        # If None, capture_html echoes the input URL.
+        self.final_url_override: str | None = None
+
+    async def capture_html(self, url: str, *, timeout_s: float = 30.0) -> Any:
+        from datetime import UTC, datetime
+
+        from pliny.snapshot.base import SnapshotResult
+
+        self.calls.append({"url": url, "timeout_s": timeout_s})
+        return SnapshotResult(
+            rendered_html=self.rendered_html,
+            screenshot_png=self.screenshot_png,
+            final_url=self.final_url_override or url,
+            page_title=self.page_title,
+            fetched_at=datetime.now(tz=UTC),
+        )
+
+
+@pytest.fixture
+def fake_snapshotter() -> FakeSnapshotter:
+    return FakeSnapshotter()

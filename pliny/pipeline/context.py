@@ -18,3 +18,5 @@ class StageContext:
     llm: object | None  # typed as LLM once pliny.llm.base ships in chunk 9
     logger: logging.LoggerAdapter[logging.Logger]
     neo4j: object | None = None  # neo4j.AsyncDriver; used by graph_sync
+    snapshotter: object | None = None  # pliny.snapshot.base.Snapshotter; used by snapshot
+    skip_downstream: bool = False  # set by handlers (e.g. snapshot merge) to short-circuit
