@@ -58,7 +58,7 @@ async def _capture_html(
     ctx: StageContext,
     *,
     classification: Classification,
-) -> tuple[str, bytes, dict[str, Any]]:
+) -> tuple[str, bytes | None, dict[str, Any]]:
     """HTML path: render via Snapshotter, return (raw_ref, screenshot_bytes, metadata)."""
     if ctx.snapshotter is None:
         raise RuntimeError("snapshot: snapshotter dependency missing")
@@ -74,6 +74,59 @@ async def _capture_html(
         "page_title": result.page_title,
     }
     return raw_ref, result.screenshot_png, metadata
+
+
+async def _capture_pdf(
+    ctx: StageContext,
+    *,
+    client: httpx.AsyncClient,
+    classification: Classification,
+) -> tuple[str, bytes | None, dict[str, Any]]:
+    """PDF path: fetch the bytes, write to raw/<sha>, no screenshot."""
+    resp = await client.get(
+        classification.final_url,
+        headers={"User-Agent": _USER_AGENT},
+        follow_redirects=True,
+    )
+    resp.raise_for_status()
+    body = resp.content
+    raw_hash = _hash_bytes(body)
+    raw_ref = f"raw/{raw_hash}"
+    await ctx.blob.put(raw_ref, body)
+    metadata: dict[str, Any] = {
+        "final_url": classification.final_url,
+        "content_type": classification.content_type,
+        "fetched_at": _now_isoformat(),
+    }
+    return raw_ref, None, metadata
+
+
+async def _capture_direct_media(
+    ctx: StageContext,
+    *,
+    classification: Classification,
+) -> tuple[str, bytes | None, dict[str, Any]]:
+    """audio/video path: persist a metadata-only JSON as the canonical raw bytes
+    (per spec line 519's "metadata JSON as raw bytes" pattern). No download —
+    media files can be huge and the actual playback URL is the source of
+    truth.
+    """
+    metadata: dict[str, Any] = {
+        "final_url": classification.final_url,
+        "content_type": classification.content_type,
+        "fetched_at": _now_isoformat(),
+    }
+    body = json.dumps(metadata).encode("utf-8")
+    raw_hash = _hash_bytes(body)
+    raw_ref = f"raw/{raw_hash}"
+    await ctx.blob.put(raw_ref, body)
+    return raw_ref, None, metadata
+
+
+def _now_isoformat() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(tz=UTC).isoformat()
 
 
 @register("snapshot")
@@ -93,14 +146,20 @@ async def snapshot_handler(ctx: StageContext) -> None:
         new_canonical_url = canonicalize(classification.final_url)
         new_content_hash = _hash_url(new_canonical_url)
 
-        if classification.bucket != "html":
-            raise NotImplementedError(
-                f"snapshot bucket {classification.bucket!r} not implemented in this slice"
+        if classification.bucket == "html":
+            raw_ref, screenshot_bytes, metadata = await _capture_html(
+                ctx, classification=classification
+            )
+        elif classification.bucket == "pdf":
+            raw_ref, screenshot_bytes, metadata = await _capture_pdf(
+                ctx, client=client, classification=classification
+            )
+        else:  # audio | video
+            raw_ref, screenshot_bytes, metadata = await _capture_direct_media(
+                ctx, classification=classification
             )
 
-        raw_ref, screenshot_bytes, metadata = await _capture_html(
-            ctx, classification=classification
-        )
+    new_type = classification.bucket if classification.bucket in ("audio", "video") else item.type
 
     # Collision check happens after capture but before any item-level UPDATE so the
     # merge path can transfer the freshly captured artifacts to the survivor.
@@ -120,8 +179,9 @@ async def snapshot_handler(ctx: StageContext) -> None:
         ctx.skip_downstream = True
         return
 
-    # No collision — write screenshot, metadata.json, and update the current item.
-    await ctx.blob.put(f"derived/{item.id}/screenshot.png", screenshot_bytes)
+    # No collision — write screenshot (HTML only), metadata.json, and update the item.
+    if screenshot_bytes is not None:
+        await ctx.blob.put(f"derived/{item.id}/screenshot.png", screenshot_bytes)
     await ctx.blob.put(
         f"derived/{item.id}/metadata.json",
         json.dumps(metadata).encode("utf-8"),
@@ -134,6 +194,7 @@ async def snapshot_handler(ctx: StageContext) -> None:
                SET canonical_url = :canonical_url,
                    content_hash = :content_hash,
                    raw_ref = :raw_ref,
+                   type = :type,
                    metadata = COALESCE(metadata, '{}'::jsonb) || CAST(:meta AS jsonb)
              WHERE id = :id
             """
@@ -142,6 +203,7 @@ async def snapshot_handler(ctx: StageContext) -> None:
             "canonical_url": new_canonical_url,
             "content_hash": new_content_hash,
             "raw_ref": raw_ref,
+            "type": new_type,
             "meta": json.dumps(metadata),
             "id": item.id,
         },
