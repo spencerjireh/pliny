@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     openai_daily_usd_cap: float = Field(default=20.0)
 
     current_embedding_model: str = Field(default="text-embedding-3-small")
+    embedding_model_version: str = Field(default="1")
 
     telegram_bot_token: str = Field(default="")
     telegram_allowed_user_ids: str = Field(default="")
