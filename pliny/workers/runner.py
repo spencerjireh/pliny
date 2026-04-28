@@ -10,6 +10,7 @@ from pliny.logging import bind, get_logger
 from pliny.pipeline.context import StageContext
 from pliny.pipeline.stages import (
     STAGE_POOLS,
+    STAGE_PREREQS,
     STAGE_VERSIONS,
     NoHandlerError,
     downstream_stages,
@@ -82,6 +83,24 @@ async def claim_one(session: AsyncSession, pool_name: str) -> ClaimedJob | None:
     )
 
 
+async def _prereqs_satisfied(session: AsyncSession, *, item_id: uuid.UUID, stage: str) -> bool:
+    deps = STAGE_PREREQS.get(stage, [])
+    if not deps:
+        return True
+    cols = ", ".join(f"{d}_version" for d in deps)
+    row = (
+        (
+            await session.execute(
+                text(f"SELECT {cols} FROM items WHERE id = :id"),
+                {"id": item_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return all(row[f"{d}_version"] >= STAGE_VERSIONS[d] for d in deps)
+
+
 async def mark_done_and_enqueue_downstream(
     session: AsyncSession,
     *,
@@ -114,6 +133,8 @@ async def mark_done_and_enqueue_downstream(
     )
 
     for next_stage in downstream_stages(item_type, claimed.stage):
+        if not await _prereqs_satisfied(session, item_id=claimed.item_id, stage=next_stage):
+            continue
         pool = STAGE_POOLS[next_stage]
         enqueued = await enqueue_job(session, item_id=claimed.item_id, stage=next_stage, pool=pool)
         if enqueued:

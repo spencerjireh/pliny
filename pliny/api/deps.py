@@ -17,6 +17,7 @@ from pliny.storage.filesystem import FilesystemBlobStore
 _engine: AsyncEngine | None = None
 _session_maker: async_sessionmaker[AsyncSession] | None = None
 _blob_store: BlobStore | None = None
+_llm: object | None = None
 
 
 def get_engine() -> AsyncEngine:
@@ -46,12 +47,32 @@ def get_blob() -> BlobStore:
     return _blob_store
 
 
+def get_llm() -> object:
+    """Return the configured LLM client. Lazily constructed; tests inject directly."""
+    global _llm
+    if _llm is None:
+        from decimal import Decimal
+
+        from pliny.llm.openai_impl import OpenAILLM
+
+        settings = get_settings()
+        _llm = OpenAILLM(
+            api_key=settings.openai_api_key,
+            rpm=settings.openai_rpm,
+            tpm=settings.openai_tpm,
+            daily_cap_usd=Decimal(str(settings.openai_daily_usd_cap)),
+            sm=get_session_maker(),
+        )
+    return _llm
+
+
 def reset_state() -> None:
     """Reset module-level singletons. Used by tests to swap engines."""
-    global _engine, _session_maker, _blob_store
+    global _engine, _session_maker, _blob_store, _llm
     _engine = None
     _session_maker = None
     _blob_store = None
+    _llm = None
 
 
 def require_api_key(

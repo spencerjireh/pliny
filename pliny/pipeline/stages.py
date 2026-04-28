@@ -7,13 +7,19 @@ Handler = Callable[[StageContext], Awaitable[None]]
 
 STAGE_VERSIONS: dict[str, int] = {
     "extract": 1,
-    "summarize": 0,
-    "chunk": 0,
-    "embed": 0,
+    "summarize": 1,
+    "chunk": 1,
+    "embed": 1,
     "entities": 0,
     "graph_sync": 0,
     "snapshot": 0,
     "wayback_fallback": 0,
+}
+
+# Stages that can only enqueue once their prereqs' versions are at the
+# current code constant. Read by the runner before INSERT.
+STAGE_PREREQS: dict[str, list[str]] = {
+    "embed": ["summarize", "chunk"],
 }
 
 STAGE_POOLS: dict[str, str] = {
@@ -60,8 +66,12 @@ def has_handler(stage: str) -> bool:
 def downstream_stages(item_type: str, finished_stage: str) -> list[str]:
     """Return downstream stages to enqueue after `finished_stage` completes.
 
-    Step 4 only registers `extract`; downstream stages (summarize/chunk/embed/...)
-    ship in later slices. Until then this returns []. Each later slice extends
-    this map.
+    embed is fan-in (depends on summarize and chunk). The runner re-checks
+    STAGE_PREREQS before INSERT; the (item_id, stage) unique constraint
+    handles the race when both finish concurrently.
     """
+    if finished_stage == "extract":
+        return ["summarize", "chunk"]
+    if finished_stage in {"summarize", "chunk"}:
+        return ["embed"]
     return []

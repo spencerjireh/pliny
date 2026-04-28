@@ -94,13 +94,28 @@ async def test_mark_done_with_matching_token_succeeds(
     assert ok is True
 
     job = (
-        await db_session.execute(select(ProcessingJob).where(ProcessingJob.item_id == item_id))
+        await db_session.execute(
+            select(ProcessingJob).where(
+                ProcessingJob.item_id == item_id, ProcessingJob.stage == "extract"
+            )
+        )
     ).scalar_one()
     await db_session.refresh(job)
     assert job.status == "done"
     item = (await db_session.execute(select(Item).where(Item.id == item_id))).scalar_one()
     await db_session.refresh(item)
     assert item.extract_version == stage_registry.STAGE_VERSIONS["extract"]
+
+    downstream_count = (
+        await db_session.execute(
+            text(
+                "SELECT count(*)::int FROM processing_jobs "
+                "WHERE item_id = :id AND stage IN ('summarize', 'chunk')"
+            ),
+            {"id": item_id},
+        )
+    ).scalar_one()
+    assert downstream_count == 2
 
 
 async def test_mark_done_with_clobbered_token_noops(
@@ -277,7 +292,11 @@ async def test_run_one_job_with_stub_handler(db_session: AsyncSession) -> None:
     assert called[0].item_id == item_id
 
     job = (
-        await db_session.execute(select(ProcessingJob).where(ProcessingJob.item_id == item_id))
+        await db_session.execute(
+            select(ProcessingJob).where(
+                ProcessingJob.item_id == item_id, ProcessingJob.stage == "extract"
+            )
+        )
     ).scalar_one()
     await db_session.refresh(job)
     assert job.status == "done"

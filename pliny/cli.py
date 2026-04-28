@@ -20,11 +20,20 @@ def _run_api() -> None:
     )
 
 
+def _import_stages() -> None:
+    """Side-effect import: registers every pipeline stage handler."""
+    import pliny.pipeline.chunk  # pyright: ignore[reportUnusedImport]
+    import pliny.pipeline.embed  # pyright: ignore[reportUnusedImport]
+    import pliny.pipeline.extract  # pyright: ignore[reportUnusedImport]
+    import pliny.pipeline.summarize  # noqa: F401  # pyright: ignore[reportUnusedImport]
+
+
 async def _run_worker_async(pool: Literal["fast", "slow"]) -> None:
     configure_logging()
+    _import_stages()
     log = get_logger("pliny.cli")
     settings = get_settings()
-    from pliny.storage.filesystem import FilesystemBlobStore
+    from pliny.api import deps
     from pliny.workers.pool import WorkerPool
 
     concurrency = (
@@ -33,7 +42,8 @@ async def _run_worker_async(pool: Literal["fast", "slow"]) -> None:
     worker = WorkerPool(
         pool_name=pool,
         concurrency=concurrency,
-        blob=FilesystemBlobStore(settings.blob_root),
+        blob=deps.get_blob(),
+        llm=deps.get_llm(),
     )
 
     loop = asyncio.get_running_loop()
