@@ -7,15 +7,18 @@ Personal knowledge base aggregator. See `spec.md` for architecture, `BUILD.md` f
 ```
 cp .env.example .env
 make sync        # uv sync
-make up          # docker compose up -d (postgres)
+make browsers    # uv run playwright install chromium (snapshot stage)
+make up          # docker compose up -d (postgres + neo4j)
 make migrate     # alembic upgrade head
 uv run pliny api &
 uv run pliny worker --pool fast &
+uv run pliny worker --pool slow &
 ```
 
 ## Make targets
 
 - `make sync` — `uv sync`
+- `make browsers` — `uv run playwright install chromium` (one-time per dev machine; needed for snapshot stage)
 - `make up` / `make down` / `make nuke` — docker compose lifecycle
 - `make migrate` — `alembic upgrade head`
 - `make test` — `pytest`

@@ -1,7 +1,10 @@
-.PHONY: up down nuke migrate test lint fmt sync
+.PHONY: up down nuke migrate test lint fmt sync browsers
 
 sync:
 	uv sync
+
+browsers:
+	uv run playwright install chromium
 
 up:
 	docker compose up -d

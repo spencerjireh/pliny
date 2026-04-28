@@ -21,6 +21,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "python-json-logger>=2.0",
     "neo4j>=5.14",
+    "playwright>=1.49",
 ]
 
 [project.scripts]
