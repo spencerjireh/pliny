@@ -68,6 +68,9 @@ class Item(Base):
     graph_sync_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    wayback_fallback_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     __table_args__ = (
         Index("items_captured_at_idx", "captured_at"),
@@ -88,6 +91,7 @@ class Item(Base):
         Index("items_entities_version_idx", "entities_version"),
         Index("items_graph_sync_version_idx", "graph_sync_version"),
         Index("items_snapshot_version_idx", "snapshot_version"),
+        Index("items_wayback_fallback_version_idx", "wayback_fallback_version"),
     )
 
 
