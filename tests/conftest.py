@@ -87,3 +87,33 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     sm = deps.get_session_maker()
     async with sm() as session:
         yield session
+
+
+class FakeLLM:
+    """Test double for the LLM Protocol. Records calls and returns canned responses."""
+
+    def __init__(self) -> None:
+        self.vision_calls: list[dict[str, object]] = []
+        self.vision_response_text: str = "OCR:\n(none)\n\nCAPTION:\nA test image."
+
+    async def chat(self, *args: object, **kwargs: object) -> object:
+        from pliny.llm.base import ChatResponse
+
+        return ChatResponse(text="", usage={"prompt_tokens": 0, "completion_tokens": 0})
+
+    async def embed(self, *args: object, **kwargs: object) -> list[list[float]]:
+        return []
+
+    async def vision(self, **kwargs: object) -> object:
+        from pliny.llm.base import ChatResponse
+
+        self.vision_calls.append(kwargs)
+        return ChatResponse(
+            text=self.vision_response_text,
+            usage={"prompt_tokens": 100, "completion_tokens": 50},
+        )
+
+
+@pytest.fixture
+def fake_llm() -> FakeLLM:
+    return FakeLLM()
