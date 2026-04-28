@@ -1,15 +1,18 @@
 import hashlib
 import json
 import re
+import uuid
 from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from pliny.api.deps import get_blob, get_db, require_api_key
 from pliny.canonicalize import canonicalize
+from pliny.db.models import Item, ItemRedirect
 from pliny.db.queries import (
     append_item_source,
     enqueue_job,
@@ -227,3 +230,93 @@ async def create_items(
     await db.commit()
 
     return IngestResponse(items=results)
+
+
+_NON_URL_STAGES: tuple[str, ...] = (
+    "extract",
+    "summarize",
+    "chunk",
+    "embed",
+    "entities",
+    "graph_sync",
+)
+_URL_STAGES: tuple[str, ...] = ("snapshot", *_NON_URL_STAGES)
+
+
+def _applicable_stages(item_type: str) -> tuple[str, ...]:
+    return _URL_STAGES if item_type == "url" else _NON_URL_STAGES
+
+
+def _derive_overall(stages: dict[str, dict[str, Any]]) -> str:
+    statuses = [s["status"] for s in stages.values()]
+    if any(s == "failed" for s in statuses):
+        return "failed"
+    if any(s in ("pending", "running") for s in statuses):
+        return "processing"
+    if all(s == "done" for s in statuses):
+        return "ready"
+    return "pending"
+
+
+@router.get("/{item_id}/status")
+async def item_status(
+    item_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[None, Depends(require_api_key)],
+) -> dict[str, Any]:
+    item = (await db.execute(select(Item).where(Item.id == item_id))).scalar_one_or_none()
+    if item is None:
+        redirect = (
+            await db.execute(select(ItemRedirect).where(ItemRedirect.from_id == item_id))
+        ).scalar_one_or_none()
+        if redirect is not None:
+            return {"redirect_to": str(redirect.to_id)}
+        raise HTTPException(status_code=404, detail="not found")
+
+    applicable = _applicable_stages(item.type)
+
+    rows = (
+        (
+            await db.execute(
+                text(
+                    "SELECT stage, status, attempts, error FROM processing_jobs WHERE item_id = :id"
+                ),
+                {"id": item_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    by_stage: dict[str, dict[str, Any]] = {r["stage"]: dict(r) for r in rows}
+
+    versions: dict[str, int] = {
+        "snapshot": item.snapshot_version,
+        "extract": item.extract_version,
+        "summarize": item.summarize_version,
+        "chunk": item.chunk_version,
+        "embed": item.embed_version,
+        "entities": item.entities_version,
+        "graph_sync": item.graph_sync_version,
+    }
+
+    stages: dict[str, dict[str, Any]] = {}
+    for stage in applicable:
+        version = versions.get(stage, 0)
+        job = by_stage.get(stage)
+        if job is not None:
+            stages[stage] = {
+                "status": job["status"],
+                "version": version,
+                "attempts": job["attempts"],
+                "error": job["error"],
+            }
+        elif version > 0:
+            stages[stage] = {"status": "done", "version": version, "attempts": 0, "error": None}
+        else:
+            stages[stage] = {"status": "pending", "version": 0, "attempts": 0, "error": None}
+
+    return {
+        "id": str(item.id),
+        "stages": stages,
+        "overall": _derive_overall(stages),
+    }
