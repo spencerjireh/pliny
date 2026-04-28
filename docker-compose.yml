@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_USER: pliny
+      POSTGRES_PASSWORD: pliny
+      POSTGRES_DB: pliny
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pliny -d pliny"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # neo4j: enable in step 8 (entities + graph_sync)
+  # neo4j:
+  #   image: neo4j:5
+  #   environment:
+  #     NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+  #   ports:
+  #     - "7474:7474"
+  #     - "7687:7687"
+  #   volumes:
+  #     - neo4j_data:/data
+
+  # rustfs: enable in step 10 (snapshot)
+  # rustfs:
+  #   image: rustfs/rustfs:latest
+  #   environment:
+  #     RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+  #     RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+  #   ports:
+  #     - "9000:9000"
+  #   volumes:
+  #     - rustfs_data:/data
+
+volumes:
+  postgres_data:
+  # neo4j_data:
+  # rustfs_data:
