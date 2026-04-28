@@ -27,7 +27,9 @@ def _import_stages() -> None:
     import pliny.pipeline.entities  # pyright: ignore[reportUnusedImport]
     import pliny.pipeline.extract  # pyright: ignore[reportUnusedImport]
     import pliny.pipeline.graph_sync  # pyright: ignore[reportUnusedImport]
-    import pliny.pipeline.summarize  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    import pliny.pipeline.snapshot  # pyright: ignore[reportUnusedImport]
+    import pliny.pipeline.summarize  # pyright: ignore[reportUnusedImport]
+    import pliny.pipeline.wayback_fallback  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
 
 async def _run_worker_async(pool: Literal["fast", "slow"]) -> None:

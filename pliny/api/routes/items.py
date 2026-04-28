@@ -144,9 +144,13 @@ async def _process_task(
     )
     await append_item_source(db, item_id=item.id, source=source, source_ref=source_ref)
 
-    enqueued = await enqueue_job(db, item_id=item.id, stage="extract", pool="fast")
+    if task.type == "url":
+        initial_stage, pool = "snapshot", "slow"
+    else:
+        initial_stage, pool = "extract", "fast"
+    enqueued = await enqueue_job(db, item_id=item.id, stage=initial_stage, pool=pool)
     if enqueued:
-        await notify(db, "job_pool_fast", str(item.id))
+        await notify(db, f"job_pool_{pool}", str(item.id))
 
     return IngestItemResult(item_id=item.id, type=item.type, deduplicated=False)
 
@@ -241,10 +245,14 @@ _NON_URL_STAGES: tuple[str, ...] = (
     "graph_sync",
 )
 _URL_STAGES: tuple[str, ...] = ("snapshot", *_NON_URL_STAGES)
+_TYPES_WITH_SNAPSHOT = frozenset({"url", "audio", "video"})
 
 
 def _applicable_stages(item_type: str) -> tuple[str, ...]:
-    return _URL_STAGES if item_type == "url" else _NON_URL_STAGES
+    """URL items go through `snapshot`. So do `audio`/`video` items, which
+    were typed `url` at ingest and mutated by snapshot's classifier — their
+    snapshot stage has already run and its status should still be visible."""
+    return _URL_STAGES if item_type in _TYPES_WITH_SNAPSHOT else _NON_URL_STAGES
 
 
 def _derive_overall(stages: dict[str, dict[str, Any]]) -> str:
@@ -297,6 +305,7 @@ async def item_status(
         "embed": item.embed_version,
         "entities": item.entities_version,
         "graph_sync": item.graph_sync_version,
+        "wayback_fallback": item.wayback_fallback_version,
     }
 
     stages: dict[str, dict[str, Any]] = {}
@@ -314,6 +323,16 @@ async def item_status(
             stages[stage] = {"status": "done", "version": version, "attempts": 0, "error": None}
         else:
             stages[stage] = {"status": "pending", "version": 0, "attempts": 0, "error": None}
+
+    # wayback_fallback is recovery-only; surface it only when an attempt has been made.
+    wayback_job = by_stage.get("wayback_fallback")
+    if wayback_job is not None:
+        stages["wayback_fallback"] = {
+            "status": wayback_job["status"],
+            "version": versions["wayback_fallback"],
+            "attempts": wayback_job["attempts"],
+            "error": wayback_job["error"],
+        }
 
     return {
         "id": str(item.id),

@@ -12,8 +12,8 @@ STAGE_VERSIONS: dict[str, int] = {
     "embed": 1,
     "entities": 1,
     "graph_sync": 1,
-    "snapshot": 0,
-    "wayback_fallback": 0,
+    "snapshot": 1,
+    "wayback_fallback": 1,
 }
 
 # Stages that can only enqueue once their prereqs' versions are at the
@@ -68,10 +68,16 @@ def has_handler(stage: str) -> bool:
 def downstream_stages(item_type: str, finished_stage: str) -> list[str]:
     """Return downstream stages to enqueue after `finished_stage` completes.
 
-    embed is fan-in (depends on summarize and chunk). The runner re-checks
-    STAGE_PREREQS before INSERT; the (item_id, stage) unique constraint
-    handles the race when both finish concurrently.
+    For URL items the chain is `snapshot -> extract -> summarize/chunk -> embed
+    -> entities -> graph_sync`. The `wayback_fallback` stage also feeds extract
+    (recovery from a failed snapshot). embed is fan-in: it depends on both
+    summarize and chunk. The runner re-checks STAGE_PREREQS before INSERT and
+    the (item_id, stage) unique constraint absorbs concurrent enqueue races.
     """
+    if finished_stage == "snapshot" and item_type in ("url", "audio", "video"):
+        return ["extract"]
+    if finished_stage == "wayback_fallback" and item_type == "url":
+        return ["extract"]
     if finished_stage == "extract":
         return ["summarize", "chunk"]
     if finished_stage in {"summarize", "chunk"}:

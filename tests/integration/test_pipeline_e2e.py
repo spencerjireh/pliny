@@ -14,7 +14,9 @@ import pliny.pipeline.embed  # pyright: ignore[reportUnusedImport]
 import pliny.pipeline.entities  # pyright: ignore[reportUnusedImport]
 import pliny.pipeline.extract  # pyright: ignore[reportUnusedImport]
 import pliny.pipeline.graph_sync  # pyright: ignore[reportUnusedImport]
-import pliny.pipeline.summarize  # noqa: F401  # pyright: ignore[reportUnusedImport]
+import pliny.pipeline.snapshot  # pyright: ignore[reportUnusedImport]
+import pliny.pipeline.summarize  # pyright: ignore[reportUnusedImport]
+import pliny.pipeline.wayback_fallback  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from pliny.db.models import Content, Item
 from pliny.workers.pool import WorkerPool
 
@@ -66,6 +68,25 @@ async def fast_pool(fake_llm, neo4j_driver: Any) -> AsyncIterator[WorkerPool]:  
         blob=deps.get_blob(),
         llm=fake_llm,
         neo4j=neo4j_driver,
+    )
+    await pool.start()
+    try:
+        yield pool
+    finally:
+        await pool.shutdown()
+
+
+@pytest.fixture
+async def slow_pool(fake_snapshotter, neo4j_driver: Any) -> AsyncIterator[WorkerPool]:  # type: ignore[no-untyped-def]
+    from pliny.api import deps
+
+    pool = WorkerPool(
+        pool_name="slow",
+        concurrency=1,
+        blob=deps.get_blob(),
+        llm=None,
+        neo4j=neo4j_driver,
+        snapshotter=fake_snapshotter,
     )
     await pool.start()
     try:
@@ -160,28 +181,37 @@ async def test_text_ingest_flows_through_extract(
 
 
 @respx.mock
-async def test_url_ingest_flows_through_extract(
+async def test_url_ingest_flows_through_snapshot_and_extract(
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
     fast_pool: WorkerPool,
+    slow_pool: WorkerPool,
+    fake_snapshotter,  # type: ignore[no-untyped-def]
+    neo4j_driver: Any,
 ) -> None:
     await _truncate(db_session)
     canonical = "https://example.com/e2e"
-    respx.get(canonical).mock(
-        return_value=httpx.Response(200, text=SAMPLE_HTML, headers={"content-type": "text/html"})
+    respx.head(canonical).mock(
+        return_value=httpx.Response(200, headers={"content-type": "text/html"})
     )
+    fake_snapshotter.rendered_html = SAMPLE_HTML.encode("utf-8")
+    fake_snapshotter.page_title = "E2E Page"
 
     payload = {"url": canonical, "source": "api", "source_ref": "e2e-url"}
     r = await client.post("/v1/items", json=payload, headers=auth_headers)
     item_id = r.json()["items"][0]["item_id"]
 
+    await _wait_for_status(client, auth_headers, item_id, stage="snapshot", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="extract", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="summarize", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="chunk", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="embed", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="entities", target="done")
-    await _wait_for_status(client, auth_headers, item_id, stage="graph_sync", target="done")
+    final = await _wait_for_status(client, auth_headers, item_id, stage="graph_sync", target="done")
+    assert final["overall"] == "ready"
+    # wayback_fallback should not appear in the response when snapshot succeeded.
+    assert "wayback_fallback" not in final["stages"]  # type: ignore[operator]
 
     content = (
         await db_session.execute(select(Content).where(Content.item_id == item_id))
@@ -192,6 +222,16 @@ async def test_url_ingest_flows_through_extract(
     item = (await db_session.execute(select(Item).where(Item.id == item_id))).scalar_one()
     await db_session.refresh(item)
     assert item.raw_ref is not None
+    assert item.snapshot_version >= 1
+    assert item.meta is not None
+    assert item.meta.get("page_title") == "E2E Page"
+
+    from pliny.api import deps
+
+    blob = deps.get_blob()
+    assert await blob.exists(f"derived/{item_id}/screenshot.png")
+    assert await blob.exists(f"derived/{item_id}/metadata.json")
+    assert fake_snapshotter.calls, "expected fake snapshotter to be invoked"
 
 
 async def test_image_ingest_flows_through_extract(

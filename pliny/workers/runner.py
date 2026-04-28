@@ -289,6 +289,15 @@ async def run_one_job(
     except Exception as exc:
         async with sm() as session:
             status = await record_failure(session, claimed=claimed, error=repr(exc))
+            if status == "failed" and claimed.stage == "snapshot":
+                enqueued = await enqueue_job(
+                    session,
+                    item_id=claimed.item_id,
+                    stage="wayback_fallback",
+                    pool="slow",
+                )
+                if enqueued:
+                    await notify(session, "job_pool_slow", str(claimed.item_id))
             await session.commit()
         log.warning(
             "stage_error",
