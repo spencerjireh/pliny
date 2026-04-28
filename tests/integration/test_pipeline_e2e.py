@@ -8,7 +8,10 @@ from httpx import AsyncClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import pliny.pipeline.extract  # noqa: F401  -- registers handler
+import pliny.pipeline.chunk  # pyright: ignore[reportUnusedImport]
+import pliny.pipeline.embed  # pyright: ignore[reportUnusedImport]
+import pliny.pipeline.extract  # pyright: ignore[reportUnusedImport]
+import pliny.pipeline.summarize  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from pliny.db.models import Content, Item
 from pliny.workers.pool import WorkerPool
 
@@ -80,11 +83,35 @@ async def test_text_ingest_flows_through_extract(
 
     status = await _wait_for_status(client, auth_headers, item_id, stage="extract", target="done")
     assert status["stages"]["extract"]["version"] >= 1  # type: ignore[index]
+    await _wait_for_status(client, auth_headers, item_id, stage="summarize", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="chunk", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="embed", target="done")
 
     content = (
         await db_session.execute(select(Content).where(Content.item_id == item_id))
     ).scalar_one()
     assert content.extracted_text == "pliny end to end"
+
+    item = (await db_session.execute(select(Item).where(Item.id == item_id))).scalar_one()
+    await db_session.refresh(item)
+    assert item.title == "Test Item"
+    assert item.summary == "Test summary."
+
+    chunk_count = (
+        await db_session.execute(
+            text("SELECT count(*)::int FROM chunks WHERE item_id = :id"),
+            {"id": item_id},
+        )
+    ).scalar_one()
+    assert chunk_count >= 1
+
+    embed_count = (
+        await db_session.execute(
+            text("SELECT count(*)::int FROM embeddings_1536 WHERE item_id = :id"),
+            {"id": item_id},
+        )
+    ).scalar_one()
+    assert embed_count >= 1
 
 
 @respx.mock
@@ -105,6 +132,9 @@ async def test_url_ingest_flows_through_extract(
     item_id = r.json()["items"][0]["item_id"]
 
     await _wait_for_status(client, auth_headers, item_id, stage="extract", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="summarize", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="chunk", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="embed", target="done")
 
     content = (
         await db_session.execute(select(Content).where(Content.item_id == item_id))
@@ -140,6 +170,9 @@ async def test_image_ingest_flows_through_extract(
     item_id = r.json()["items"][0]["item_id"]
 
     await _wait_for_status(client, auth_headers, item_id, stage="extract", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="summarize", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="chunk", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="embed", target="done")
 
     content = (
         await db_session.execute(select(Content).where(Content.item_id == item_id))
