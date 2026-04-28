@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 import pytest
@@ -10,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import pliny.pipeline.chunk  # pyright: ignore[reportUnusedImport]
 import pliny.pipeline.embed  # pyright: ignore[reportUnusedImport]
+import pliny.pipeline.entities  # pyright: ignore[reportUnusedImport]
 import pliny.pipeline.extract  # pyright: ignore[reportUnusedImport]
+import pliny.pipeline.graph_sync  # pyright: ignore[reportUnusedImport]
 import pliny.pipeline.summarize  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from pliny.db.models import Content, Item
 from pliny.workers.pool import WorkerPool
@@ -27,21 +30,42 @@ async def _truncate(db_session: AsyncSession) -> None:
     await db_session.execute(
         text(
             "TRUNCATE processing_jobs, item_sources, item_redirects, content, "
-            "image_phashes, items RESTART IDENTITY CASCADE"
+            "image_phashes, item_entities, entities, item_tags, tags, items "
+            "RESTART IDENTITY CASCADE"
         )
     )
     await db_session.commit()
 
 
+_ENTITIES_RESPONSE = (
+    '{"entities":[{"name":"Pliny","type":"work","mention_text":"Pliny","confidence":0.9}]}'
+)
+
+
+def _route_chat(fake_llm: Any) -> Any:
+    """Switch the FakeLLM chat response between summarize and entities prompts."""
+
+    def provider(kwargs: dict[str, Any]) -> str:
+        msgs = kwargs.get("messages") or []
+        sys_msg = next((m for m in msgs if m.get("role") == "system"), {}).get("content", "")
+        if "extract named entities" in sys_msg:
+            return _ENTITIES_RESPONSE
+        return fake_llm.chat_response_text
+
+    return provider
+
+
 @pytest.fixture
-async def fast_pool(fake_llm) -> AsyncIterator[WorkerPool]:  # type: ignore[no-untyped-def]
+async def fast_pool(fake_llm, neo4j_driver: Any) -> AsyncIterator[WorkerPool]:  # type: ignore[no-untyped-def]
     from pliny.api import deps
 
+    fake_llm.chat_response_provider = _route_chat(fake_llm)
     pool = WorkerPool(
         pool_name="fast",
         concurrency=2,
         blob=deps.get_blob(),
         llm=fake_llm,
+        neo4j=neo4j_driver,
     )
     await pool.start()
     try:
@@ -74,6 +98,7 @@ async def test_text_ingest_flows_through_extract(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
     fast_pool: WorkerPool,
+    neo4j_driver: Any,
 ) -> None:
     await _truncate(db_session)
     payload = {"text": "pliny end to end", "source": "api", "source_ref": "e2e-text"}
@@ -86,6 +111,9 @@ async def test_text_ingest_flows_through_extract(
     await _wait_for_status(client, auth_headers, item_id, stage="summarize", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="chunk", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="embed", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="entities", target="done")
+    final = await _wait_for_status(client, auth_headers, item_id, stage="graph_sync", target="done")
+    assert final["overall"] == "ready"
 
     content = (
         await db_session.execute(select(Content).where(Content.item_id == item_id))
@@ -113,6 +141,23 @@ async def test_text_ingest_flows_through_extract(
     ).scalar_one()
     assert embed_count >= 1
 
+    item_entity_count = (
+        await db_session.execute(
+            text("SELECT count(*)::int FROM item_entities WHERE item_id = :id"),
+            {"id": item_id},
+        )
+    ).scalar_one()
+    assert item_entity_count >= 1
+
+    async with neo4j_driver.session() as s:
+        result = await s.run(
+            "MATCH (i:Item {id:$id})-[:MENTIONS]->(e:Entity) RETURN count(e) AS c",
+            id=str(item_id),
+        )
+        record = await result.single()
+    assert record is not None
+    assert int(record["c"]) >= 1
+
 
 @respx.mock
 async def test_url_ingest_flows_through_extract(
@@ -135,6 +180,8 @@ async def test_url_ingest_flows_through_extract(
     await _wait_for_status(client, auth_headers, item_id, stage="summarize", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="chunk", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="embed", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="entities", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="graph_sync", target="done")
 
     content = (
         await db_session.execute(select(Content).where(Content.item_id == item_id))
@@ -173,6 +220,8 @@ async def test_image_ingest_flows_through_extract(
     await _wait_for_status(client, auth_headers, item_id, stage="summarize", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="chunk", target="done")
     await _wait_for_status(client, auth_headers, item_id, stage="embed", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="entities", target="done")
+    await _wait_for_status(client, auth_headers, item_id, stage="graph_sync", target="done")
 
     content = (
         await db_session.execute(select(Content).where(Content.item_id == item_id))
