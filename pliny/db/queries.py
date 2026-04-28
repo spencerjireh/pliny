@@ -1,14 +1,31 @@
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from sqlalchemy import insert, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pliny.db.models import Chunk, Item, ItemSource, ItemTag, ProcessingJob, Tag
+from pliny.db.models import (
+    Chunk,
+    Entity,
+    Item,
+    ItemEntity,
+    ItemSource,
+    ItemTag,
+    ProcessingJob,
+    Tag,
+)
 
 if TYPE_CHECKING:
     from pliny.pipeline.chunk.chunker import ChunkPiece
+
+
+class EntityMention(TypedDict):
+    name: str
+    type: str
+    mention_text: str | None
+    confidence: float | None
+    aliases: list[str] | None
 
 
 async def find_item_by_content_hash(session: AsyncSession, content_hash: str) -> Item | None:
@@ -154,3 +171,59 @@ async def link_item_tag(
 ) -> None:
     stmt = pg_insert(ItemTag).values(item_id=item_id, tag_id=tag_id).on_conflict_do_nothing()
     await session.execute(stmt)
+
+
+async def replace_item_entities(
+    session: AsyncSession,
+    *,
+    item_id: uuid.UUID,
+    mentions: list[EntityMention],
+    version: int,
+) -> None:
+    """Delete-and-replace `item_entities` rows for an item.
+
+    Pre-lowercases canonical_name so the (canonical_name, type) unique constraint
+    acts as case-insensitive matching. Reuses an existing entity row when one
+    exists; otherwise inserts a new one. Aliases are stored on first creation
+    only (we don't merge alias lists in v1).
+    """
+    await session.execute(
+        text("DELETE FROM item_entities WHERE item_id = :id"),
+        {"id": item_id},
+    )
+    if not mentions:
+        return
+
+    rows: dict[uuid.UUID, dict[str, Any]] = {}
+    for m in mentions:
+        canonical = m["name"].strip().lower()
+        if not canonical:
+            continue
+        stmt = (
+            pg_insert(Entity)
+            .values(
+                id=uuid.uuid4(),
+                canonical_name=canonical,
+                type=m["type"],
+                aliases=m.get("aliases"),
+            )
+            .on_conflict_do_update(
+                index_elements=["canonical_name", "type"],
+                set_={"canonical_name": canonical},
+            )
+            .returning(Entity.id)
+        )
+        entity_id = (await session.execute(stmt)).scalar_one()
+        rows.setdefault(
+            entity_id,
+            {
+                "item_id": item_id,
+                "entity_id": entity_id,
+                "mention_text": m.get("mention_text"),
+                "confidence": m.get("confidence"),
+                "entities_version": version,
+            },
+        )
+
+    if rows:
+        await session.execute(insert(ItemEntity), list(rows.values()))
