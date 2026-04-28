@@ -1,6 +1,6 @@
 from fastapi import APIRouter, FastAPI
 
-from pliny.api.routes import health, items
+from pliny.api.routes import health, items, search
 from pliny.logging import configure_logging
 
 
@@ -12,6 +12,7 @@ def create_app() -> FastAPI:
 
     v1 = APIRouter(prefix="/v1")
     v1.include_router(items.router, prefix="/items", tags=["items"])
+    v1.include_router(search.router, prefix="/search", tags=["search"])
     app.include_router(v1)
 
     return app
