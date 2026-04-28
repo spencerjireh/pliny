@@ -748,9 +748,9 @@ Backup wiring is deferred for v1 — Coolify's scheduled `pg_dump` plus RustFS b
 2. **[done]** FastAPI scaffolding, `/items` ingest endpoint with **syntactic-only** URL canonicalization + dedup + `item_sources`. `hmac.compare_digest` API-key dependency. `/healthz`. Multi-item ingest from a single source_ref (text + URL splitting).
 3. **[done]** Worker loop with two pools, claim_token, NOTIFY/LISTEN, exponential backoff, and the stale-job sweeper. Status endpoint computes from versions + jobs and honors `item_redirects`.
 4. **[done]** `extract` stage for text and URLs (initially without Playwright snapshot — fetch raw HTML directly). Image OCR + caption via vision; perceptual hash computed in the same stage so `metadata.possible_duplicate_of` is populated from day one.
-5. `summarize` and `chunk` stages.
-6. `embed` stage with pgvector and partial HNSW indexes per `(granularity, model_name)`.
-7. `/search` endpoint with hybrid RRF retrieval, mode-specific cursor, `ts_headline` highlights, filters (including `possible_duplicate=true`).
+5. **[done]** `summarize` and `chunk` stages.
+6. **[done]** `embed` stage with pgvector and partial HNSW indexes per `(granularity, model_name)`.
+7. **[done]** `/search` endpoint with hybrid RRF retrieval, mode-specific cursor, `ts_headline` highlights, filters (including `possible_duplicate=true`).
 8. `entities` stage and Neo4j wiring (driver + connection from env).
 9. `graph_sync` stage and `rebuild_graph` admin endpoint.
 10. `snapshot` stage on the slow pool: redirect resolution + classifier (HTML / PDF / recognized media host / direct media). Playwright + SingleFile + screenshot for HTML; metadata fetchers + ffprobe for media. Snapshot-time merge into `item_redirects` on hash collision. Flip URL `extract` to read SingleFile HTML. Add `wayback_fallback` stage.
