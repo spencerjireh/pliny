@@ -10,8 +10,8 @@ STAGE_VERSIONS: dict[str, int] = {
     "summarize": 1,
     "chunk": 1,
     "embed": 1,
-    "entities": 0,
-    "graph_sync": 0,
+    "entities": 1,
+    "graph_sync": 1,
     "snapshot": 0,
     "wayback_fallback": 0,
 }
@@ -20,6 +20,8 @@ STAGE_VERSIONS: dict[str, int] = {
 # current code constant. Read by the runner before INSERT.
 STAGE_PREREQS: dict[str, list[str]] = {
     "embed": ["summarize", "chunk"],
+    "entities": ["embed"],
+    "graph_sync": ["entities"],
 }
 
 STAGE_POOLS: dict[str, str] = {
@@ -74,4 +76,8 @@ def downstream_stages(item_type: str, finished_stage: str) -> list[str]:
         return ["summarize", "chunk"]
     if finished_stage in {"summarize", "chunk"}:
         return ["embed"]
+    if finished_stage == "embed":
+        return ["entities"]
+    if finished_stage == "entities":
+        return ["graph_sync"]
     return []
