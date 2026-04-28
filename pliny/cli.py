@@ -1,7 +1,11 @@
 import argparse
+import asyncio
+import signal
 import sys
+from typing import Literal
 
 from pliny.config import get_settings
+from pliny.logging import configure_logging, get_logger
 
 
 def _run_api() -> None:
@@ -16,8 +20,43 @@ def _run_api() -> None:
     )
 
 
+async def _run_worker_async(pool: Literal["fast", "slow"]) -> None:
+    configure_logging()
+    log = get_logger("pliny.cli")
+    settings = get_settings()
+    from pliny.storage.filesystem import FilesystemBlobStore
+    from pliny.workers.pool import WorkerPool
+
+    concurrency = (
+        settings.fast_worker_concurrency if pool == "fast" else settings.slow_worker_concurrency
+    )
+    worker = WorkerPool(
+        pool_name=pool,
+        concurrency=concurrency,
+        blob=FilesystemBlobStore(settings.blob_root),
+    )
+
+    loop = asyncio.get_running_loop()
+    stop = asyncio.Event()
+
+    def _on_signal() -> None:
+        log.info("worker_shutdown_requested")
+        stop.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _on_signal)
+
+    await worker.start()
+    log.info("worker_started", extra={"pool": pool, "concurrency": concurrency})
+    await stop.wait()
+    await worker.shutdown()
+    log.info("worker_stopped")
+
+
 def _run_worker(pool: str) -> None:
-    raise NotImplementedError("worker entrypoint ships in chunk 7")
+    if pool not in ("fast", "slow"):
+        raise SystemExit(f"unknown pool: {pool}")
+    asyncio.run(_run_worker_async(pool))  # type: ignore[arg-type]
 
 
 def _run_bot() -> None:
