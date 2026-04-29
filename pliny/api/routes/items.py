@@ -12,7 +12,17 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from pliny.api.deps import get_blob, get_db, require_api_key
 from pliny.canonicalize import canonicalize
-from pliny.db.models import Item, ItemRedirect
+from pliny.db.models import (
+    Chunk,
+    Content,
+    Entity,
+    Item,
+    ItemEntity,
+    ItemRedirect,
+    ItemSource,
+    ItemTag,
+    Tag,
+)
 from pliny.db.queries import (
     append_item_source,
     enqueue_job,
@@ -234,6 +244,88 @@ async def create_items(
     await db.commit()
 
     return IngestResponse(items=results)
+
+
+@router.get("/{item_id}")
+async def get_item(
+    item_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[None, Depends(require_api_key)],
+) -> dict[str, Any]:
+    item = (await db.execute(select(Item).where(Item.id == item_id))).scalar_one_or_none()
+    if item is None:
+        redirect = (
+            await db.execute(select(ItemRedirect).where(ItemRedirect.from_id == item_id))
+        ).scalar_one_or_none()
+        if redirect is not None:
+            return {"redirect_to": str(redirect.to_id)}
+        raise HTTPException(status_code=404, detail="not found")
+
+    content = (
+        await db.execute(select(Content).where(Content.item_id == item_id))
+    ).scalar_one_or_none()
+    chunks = (
+        (
+            await db.execute(
+                select(Chunk).where(Chunk.item_id == item_id).order_by(Chunk.chunk_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    sources = (
+        (await db.execute(select(ItemSource).where(ItemSource.item_id == item_id))).scalars().all()
+    )
+    entity_rows = (
+        await db.execute(
+            select(Entity, ItemEntity)
+            .join(ItemEntity, ItemEntity.entity_id == Entity.id)
+            .where(ItemEntity.item_id == item_id)
+        )
+    ).all()
+    tag_rows = (
+        (
+            await db.execute(
+                select(Tag).join(ItemTag, ItemTag.tag_id == Tag.id).where(ItemTag.item_id == item_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        "id": str(item.id),
+        "type": item.type,
+        "title": item.title,
+        "summary": item.summary,
+        "captured_at": item.captured_at.isoformat(),
+        "canonical_url": item.canonical_url,
+        "content_hash": item.content_hash,
+        "raw_ref": item.raw_ref,
+        "metadata": item.meta or {},
+        "content": (
+            {"extracted_text": content.extracted_text} if content is not None else None
+        ),
+        "chunks": [{"index": c.chunk_index, "text": c.text} for c in chunks],
+        "sources": [
+            {
+                "source": s.source,
+                "source_ref": s.source_ref,
+                "captured_at": s.captured_at.isoformat(),
+            }
+            for s in sources
+        ],
+        "entities": [
+            {
+                "name": e.canonical_name,
+                "type": e.type,
+                "mention_text": ie.mention_text,
+                "confidence": ie.confidence,
+            }
+            for e, ie in entity_rows
+        ],
+        "tags": [t.name for t in tag_rows],
+    }
 
 
 _NON_URL_STAGES: tuple[str, ...] = (
