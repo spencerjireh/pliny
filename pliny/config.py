@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     slow_worker_concurrency: int = Field(default=2)
     stage_timeout_seconds: int = Field(default=900)
 
+    cors_allowed_origins: str = Field(default="")
+
 
 @lru_cache
 def get_settings() -> Settings:
