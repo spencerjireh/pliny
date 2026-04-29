@@ -44,5 +44,27 @@ class FilesystemBlobStore:
 
         await asyncio.to_thread(_delete)
 
+    async def delete_prefix(self, prefix: str) -> None:
+        """Recursively delete every blob whose key starts with `prefix`.
+
+        Treats `prefix` as a directory boundary: callers pass a trailing slash
+        when they mean "everything inside this directory" (e.g. `derived/<id>/`).
+        """
+
+        def _delete_tree() -> None:
+            target = self._path(prefix)
+            if target.is_dir():
+                for child in sorted(target.rglob("*"), reverse=True):
+                    if child.is_file() or child.is_symlink():
+                        with contextlib.suppress(FileNotFoundError):
+                            child.unlink()
+                    elif child.is_dir():
+                        with contextlib.suppress(OSError):
+                            child.rmdir()
+                with contextlib.suppress(OSError):
+                    target.rmdir()
+
+        await asyncio.to_thread(_delete_tree)
+
     def url_for(self, key: str) -> str | None:
         return None

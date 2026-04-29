@@ -51,3 +51,27 @@ async def test_atomic_put_no_partial_files(store: FilesystemBlobStore, tmp_path:
     await store.put("raw/abc", b"payload")
     files = sorted(p.name for p in (tmp_path / "raw").iterdir())
     assert files == ["abc"]
+
+
+async def test_delete_prefix_removes_directory_tree(
+    store: FilesystemBlobStore, tmp_path: Path
+) -> None:
+    await store.put("derived/abc/screenshot.png", b"png")
+    await store.put("derived/abc/metadata.json", b"{}")
+    await store.put("derived/abc/nested/extra.bin", b"x")
+    await store.put("derived/other/keep.txt", b"keep")
+    await store.put("raw/keep-me", b"keep")
+
+    await store.delete_prefix("derived/abc/")
+
+    assert not await store.exists("derived/abc/screenshot.png")
+    assert not await store.exists("derived/abc/metadata.json")
+    assert not await store.exists("derived/abc/nested/extra.bin")
+    assert not (tmp_path / "derived" / "abc").exists()
+    # Sibling and unrelated keys survive.
+    assert await store.exists("derived/other/keep.txt")
+    assert await store.exists("raw/keep-me")
+
+
+async def test_delete_prefix_missing_no_error(store: FilesystemBlobStore) -> None:
+    await store.delete_prefix("derived/never-existed/")

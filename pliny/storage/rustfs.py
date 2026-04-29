@@ -19,5 +19,8 @@ class RustFSBlobStore:
     async def delete(self, key: str) -> None:
         raise NotImplementedError("RustFS impl ships with snapshot slice")
 
+    async def delete_prefix(self, prefix: str) -> None:
+        raise NotImplementedError("RustFS impl ships with snapshot slice")
+
     def url_for(self, key: str) -> str | None:
         raise NotImplementedError("RustFS impl ships with snapshot slice")
