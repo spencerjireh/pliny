@@ -65,9 +65,7 @@ async def test_delete_item_happy_path(
 
     # Neo4j node gone.
     async with neo4j_driver.session() as s:
-        result = await s.run(
-            "MATCH (i:Item {id: $id}) RETURN count(i) AS c", id=str(item_id)
-        )
+        result = await s.run("MATCH (i:Item {id: $id}) RETURN count(i) AS c", id=str(item_id))
         record = await result.single()
     assert record is not None
     assert int(record["c"]) == 0
