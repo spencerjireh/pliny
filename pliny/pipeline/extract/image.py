@@ -11,7 +11,7 @@ from pliny.pipeline.stages import STAGE_VERSIONS
 from pliny.prompts.vision_ocr import PROMPT
 from pliny.prompts.vision_ocr import VERSION as PROMPT_VERSION
 
-_VISION_MODEL = "gpt-4o-mini-2024-07-18"
+_VISION_MODEL = "gpt-4o-mini"
 _HAMMING_THRESHOLD = 5
 _BIT_MASK_64 = (1 << 64) - 1
 _SIGN_BIT = 1 << 63

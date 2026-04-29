@@ -268,4 +268,4 @@ async def test_image_ingest_flows_through_extract(
     ).scalar_one()
     assert content.extracted_text == fake_llm.vision_response_text
 
-    assert any(call.get("model") == "gpt-4o-mini-2024-07-18" for call in fake_llm.vision_calls)
+    assert any(call.get("model") == "gpt-4o-mini" for call in fake_llm.vision_calls)

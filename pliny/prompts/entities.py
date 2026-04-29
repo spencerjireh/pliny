@@ -1,5 +1,5 @@
 VERSION = 1
-MODEL = "gpt-4o-mini-2024-07-18"
+MODEL = "gpt-4o-mini"
 MAX_INPUT_CHARS = 32_000
 
 PROMPT = """You extract named entities from articles for a personal knowledge base.
