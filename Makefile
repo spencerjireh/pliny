@@ -1,10 +1,14 @@
-.PHONY: up down nuke migrate test lint fmt sync browsers
+.PHONY: up down nuke migrate test lint fmt sync browsers regen-types
 
 sync:
 	uv sync
 
 browsers:
 	uv run playwright install chromium
+
+regen-types:
+	@curl -fsS http://localhost:8000/openapi.json \
+	  | npx --yes openapi-typescript@^7 -o frontend/src/api/types.ts
 
 up:
 	docker compose up -d
