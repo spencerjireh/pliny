@@ -76,6 +76,7 @@ async def test_bulk_reprocess_drives_item_to_new_version(
     async def _stub(ctx: StageContext) -> None:
         called.append(ctx)
 
+    original = stage_registry._HANDLERS.get("summarize")
     stage_registry._HANDLERS["summarize"] = _stub
     try:
         ran = await run_one_job(
@@ -85,7 +86,10 @@ async def test_bulk_reprocess_drives_item_to_new_version(
             llm=None,
         )
     finally:
-        stage_registry._HANDLERS.pop("summarize", None)
+        if original is None:
+            stage_registry._HANDLERS.pop("summarize", None)
+        else:
+            stage_registry._HANDLERS["summarize"] = original
 
     assert ran is True
     assert len(called) == 1
@@ -123,6 +127,7 @@ async def test_per_item_reprocess_drives_extract_back_to_done(
     async def _stub(ctx: StageContext) -> None:
         called.append(ctx)
 
+    original = stage_registry._HANDLERS.get("extract")
     stage_registry._HANDLERS["extract"] = _stub
     try:
         ran = await run_one_job(
@@ -132,7 +137,10 @@ async def test_per_item_reprocess_drives_extract_back_to_done(
             llm=None,
         )
     finally:
-        stage_registry._HANDLERS.pop("extract", None)
+        if original is None:
+            stage_registry._HANDLERS.pop("extract", None)
+        else:
+            stage_registry._HANDLERS["extract"] = original
 
     assert ran is True
     assert len(called) == 1
@@ -185,6 +193,7 @@ async def test_retry_then_run_recovers_failed_job(
     async def _stub(ctx: StageContext) -> None:
         pass
 
+    original = stage_registry._HANDLERS.get("extract")
     stage_registry._HANDLERS["extract"] = _stub
     try:
         ran = await run_one_job(
@@ -194,7 +203,10 @@ async def test_retry_then_run_recovers_failed_job(
             llm=None,
         )
     finally:
-        stage_registry._HANDLERS.pop("extract", None)
+        if original is None:
+            stage_registry._HANDLERS.pop("extract", None)
+        else:
+            stage_registry._HANDLERS["extract"] = original
 
     assert ran is True
 

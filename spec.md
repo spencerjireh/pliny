@@ -756,4 +756,4 @@ Backup wiring is deferred for v1 — Coolify's scheduled `pg_dump` plus RustFS b
 10. **[done]** `snapshot` stage on the slow pool: redirect resolution + classifier (HTML / PDF / recognized media host / direct media). Playwright + SingleFile + screenshot for HTML; metadata fetchers + ffprobe for media. Snapshot-time merge into `item_redirects` on hash collision. Flip URL `extract` to read SingleFile HTML. Add `wayback_fallback` stage.
 11. **[done]** Telegram bot (long polling + `/status` polling for summary callback + redirect-following on merge).
 12. **[done]** React viewer (search bar + filter sidebar + results + delete affordance + localStorage auth + duplicate-card inline render of the linked candidate).
-13. `/metrics`, reprocess admin endpoints, end-to-end CI suite, reprocessing flow validation.
+13. **[done]** `/metrics`, reprocess admin endpoints, end-to-end CI suite, reprocessing flow validation.
