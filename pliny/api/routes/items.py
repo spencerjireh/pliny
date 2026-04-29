@@ -1,16 +1,18 @@
+import contextlib
 import hashlib
 import json
 import re
 import uuid
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
+from neo4j import AsyncDriver
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from pliny.api.deps import get_blob, get_db, require_api_key
+from pliny.api.deps import get_blob, get_db, get_neo4j_driver, require_api_key
 from pliny.canonicalize import canonicalize
 from pliny.db.models import (
     Chunk,
@@ -326,6 +328,41 @@ async def get_item(
         ],
         "tags": [t.name for t in tag_rows],
     }
+
+
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(
+    item_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    blob: Annotated[BlobStore, Depends(get_blob)],
+    _: Annotated[None, Depends(require_api_key)],
+) -> Response:
+    item = (await db.execute(select(Item).where(Item.id == item_id))).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=404, detail="not found")
+
+    raw_ref = item.raw_ref
+
+    # FK cascades drop content/chunks/embeddings/item_sources/item_entities/item_tags/
+    # processing_jobs/image_phashes and item_redirects(to_id). item_redirects.from_id
+    # has no FK; clean it up before the items row goes away.
+    await db.execute(text("DELETE FROM item_redirects WHERE from_id = :id"), {"id": item_id})
+    await db.execute(text("DELETE FROM items WHERE id = :id"), {"id": item_id})
+    await db.commit()
+
+    # Best-effort blob cleanup. Failures here are non-fatal — the canonical state is in
+    # Postgres, and orphaned blobs can be GC'd later if it ever becomes worth it.
+    with contextlib.suppress(Exception):
+        await blob.delete_prefix(f"derived/{item_id}/")
+    if raw_ref is not None:
+        with contextlib.suppress(Exception):
+            await blob.delete(raw_ref)
+
+    driver = cast(AsyncDriver, get_neo4j_driver())
+    async with driver.session() as session:
+        await session.run("MATCH (i:Item {id: $id}) DETACH DELETE i", id=str(item_id))
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 _NON_URL_STAGES: tuple[str, ...] = (
