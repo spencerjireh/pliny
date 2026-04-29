@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = Field(default="")
     telegram_allowed_user_ids: str = Field(default="")
+    pliny_api_base_url: str = Field(default="http://localhost:8000")
 
     fast_worker_concurrency: int = Field(default=4)
     slow_worker_concurrency: int = Field(default=2)

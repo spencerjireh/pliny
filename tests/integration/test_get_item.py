@@ -95,8 +95,10 @@ async def test_get_item_with_derived_rows(
     db_session.add(ItemTag(item_id=item_id, tag_id=tag.id))
 
     item_obj = (
-        await db_session.execute(text("SELECT * FROM items WHERE id = :id"), {"id": item_id})
-    ).mappings().one()
+        (await db_session.execute(text("SELECT * FROM items WHERE id = :id"), {"id": item_id}))
+        .mappings()
+        .one()
+    )
     assert item_obj["id"] == item_id
 
     db_item = await db_session.get(Item, item_id)

@@ -76,7 +76,27 @@ def _run_worker(pool: str) -> None:
 
 
 def _run_bot() -> None:
-    raise NotImplementedError("bot ships with build-order step 11")
+    configure_logging()
+    log = get_logger("pliny.cli")
+    settings = get_settings()
+    if not settings.telegram_bot_token:
+        raise SystemExit("TELEGRAM_BOT_TOKEN is not set")
+
+    from pliny.bot.config import parse_allowed_user_ids
+    from pliny.bot.runner import run_bot
+
+    allowed = parse_allowed_user_ids(settings.telegram_allowed_user_ids)
+    if not allowed:
+        log.warning("no_allowed_user_ids; bot will drop every message")
+
+    asyncio.run(
+        run_bot(
+            bot_token=settings.telegram_bot_token,
+            pliny_base_url=settings.pliny_api_base_url,
+            pliny_api_key=settings.api_key,
+            allowed_user_ids=allowed,
+        )
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

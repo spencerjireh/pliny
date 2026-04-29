@@ -19,7 +19,9 @@ class StubPliny:
     def __init__(self) -> None:
         self.json_calls: list[dict[str, Any]] = []
         self.file_calls: list[dict[str, Any]] = []
-        self.next_items: list[dict[str, Any]] = [{"item_id": "i1", "type": "x", "deduplicated": False}]
+        self.next_items: list[dict[str, Any]] = [
+            {"item_id": "i1", "type": "x", "deduplicated": False}
+        ]
 
     async def ingest_json(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.json_calls.append(kwargs)
@@ -54,7 +56,9 @@ def _msg(**overrides: Any) -> dict[str, Any]:
 
 async def test_text_message(telegram: StubTelegram, pliny: StubPliny) -> None:
     result = await dispatch_message(
-        _msg(text="hello world"), telegram=telegram, pliny=pliny  # type: ignore[arg-type]
+        _msg(text="hello world"),
+        telegram=telegram,
+        pliny=pliny,  # type: ignore[arg-type]
     )
 
     assert result.note is None
@@ -63,9 +67,7 @@ async def test_text_message(telegram: StubTelegram, pliny: StubPliny) -> None:
         {
             "text": "hello world",
             "source_ref": "tg:100:7",
-            "metadata": {
-                "telegram": {"chat_id": 100, "message_id": 7, "from_user_id": 5000}
-            },
+            "metadata": {"telegram": {"chat_id": 100, "message_id": 7, "from_user_id": 5000}},
         }
     ]
     assert pliny.file_calls == []
@@ -93,9 +95,7 @@ async def test_photo_picks_largest(telegram: StubTelegram, pliny: StubPliny) -> 
     assert pliny.file_calls[0]["source_ref"] == "tg:100:7"
 
 
-async def test_document_uses_mime_and_filename(
-    telegram: StubTelegram, pliny: StubPliny
-) -> None:
+async def test_document_uses_mime_and_filename(telegram: StubTelegram, pliny: StubPliny) -> None:
     msg = _msg(
         document={
             "file_id": "doc1",
