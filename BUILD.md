@@ -15,7 +15,7 @@ Companion to `spec.md`. Pins the toolchain, repo layout, and ops choices the spe
 | Pre-commit | `pre-commit` running `ruff check`, `ruff format --check`, `pyright` |
 | Migrations | Alembic |
 | DB driver | `psycopg[binary,pool]` (async) |
-| Telegram | `aiogram` 3.x (long polling) |
+| Telegram | direct `httpx` long-polling client (no `aiogram`/`python-telegram-bot` dep) |
 | Tokenizer | `tiktoken` (`cl100k_base`) |
 | pHash | `imagehash` + `Pillow` |
 | HTML extract | `trafilatura` |
@@ -131,11 +131,11 @@ scrollz/
     bot.Dockerfile
     frontend.Dockerfile
   docker-compose.yml          # local dev: postgres, neo4j, rustfs, api, workers, bot, frontend
-  Makefile                    # nuke / up / migrate / test / regen-types
+  Makefile                    # nuke / up / migrate / test / regen-types / regen-types-static
   .github/
     workflows/
       ci.yml                  # ruff, pyright, pytest, frontend build, openapi diff check
-      nightly-live.yml        # OpenAI live suite
+      # nightly-live.yml      # deferred until a live OpenAI suite exists
   spec.md
   user_stories.md
   BUILD.md
@@ -158,15 +158,16 @@ Each runs as its own container/service in production.
 `docker compose up` brings the full stack up. `Makefile` targets:
 
 ```
-make up          # docker compose up -d
-make nuke        # compose down -v && up && alembic upgrade head
-make migrate     # alembic upgrade head
-make test        # pytest
-make lint        # ruff + pyright
-make regen-types # curl /openapi.json | npx openapi-typescript > frontend/src/api/types.ts
+make up                 # docker compose up -d (postgres, neo4j, rustfs, api, workers, bot, frontend)
+make nuke               # compose down -v && up && alembic upgrade head
+make migrate            # alembic upgrade head
+make test               # pytest
+make lint               # ruff + pyright
+make regen-types        # curl http://localhost:8000/openapi.json | npx openapi-typescript -o frontend/src/api/types.ts
+make regen-types-static # same, but extracts the OpenAPI doc via create_app().openapi() — no live server needed
 ```
 
-CI fails if `regen-types` produces a diff — keeps the FE in sync.
+CI runs `regen-types-static` and fails if `frontend/src/api/types.ts` would change — keeps the FE in sync without booting uvicorn.
 
 ## Configuration
 
@@ -244,16 +245,13 @@ Shape is Sentry-ingestable (`level`, `event`, `error`) and Prometheus-friendly (
 
 ## CI (GitHub Actions)
 
-`.github/workflows/ci.yml` on push + PR:
+`.github/workflows/ci.yml` runs three jobs in parallel on push to `main` and on PRs:
 
-1. `uv sync`
-2. `ruff check` + `ruff format --check`
-3. `pyright`
-4. `pytest` (testcontainers spin up PG/Neo4j/RustFS)
-5. `cd frontend && npm ci && npm run lint && npm run build`
-6. Spin API, regen `frontend/src/api/types.ts`, fail on diff.
+1. **python**: `uv sync`, `ruff check`, `ruff format --check`, `pyright`, `pytest` (testcontainers spin up PG/Neo4j on the runner's Docker).
+2. **frontend**: `npm ci`, `npm run lint`, `npm run build`, `npm run test`.
+3. **openapi-drift**: `make regen-types-static` (extracts OpenAPI via `create_app().openapi()` directly — no uvicorn boot, no live DB), then `git diff --exit-code frontend/src/api/types.ts`.
 
-`.github/workflows/nightly-live.yml`: scheduled daily, runs the live OpenAI suite against real keys.
+`nightly-live.yml` is deferred until a live OpenAI test suite exists; running an empty cron workflow that fails every night is worse than not having one.
 
 ## Deployment (Coolify)
 
