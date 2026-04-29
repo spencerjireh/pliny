@@ -39,6 +39,9 @@ export default [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      // TypeScript is the source of truth for undefined names; no-undef collides
+      // with built-in DOM types and the JSX runtime.
+      "no-undef": "off",
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
