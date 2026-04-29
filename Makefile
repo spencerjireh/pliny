@@ -1,4 +1,4 @@
-.PHONY: up down nuke migrate test lint fmt sync browsers regen-types
+.PHONY: up down nuke migrate test lint fmt sync browsers regen-types regen-types-static
 
 sync:
 	uv sync
@@ -8,6 +8,12 @@ browsers:
 
 regen-types:
 	@curl -fsS http://localhost:8000/openapi.json \
+	  | npx --yes openapi-typescript@^7 -o frontend/src/api/types.ts
+
+# CI-friendly variant: extracts the OpenAPI document directly from the FastAPI
+# app via Python. Doesn't need a running server or a live database.
+regen-types-static:
+	@uv run python -c "import json; from pliny.api.app import create_app; print(json.dumps(create_app().openapi()))" \
 	  | npx --yes openapi-typescript@^7 -o frontend/src/api/types.ts
 
 up:
