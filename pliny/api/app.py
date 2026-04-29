@@ -1,7 +1,7 @@
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from pliny.api.routes import admin, health, items, search
+from pliny.api.routes import admin, health, items, metrics, search
 from pliny.config import get_settings
 from pliny.logging import configure_logging
 
@@ -22,6 +22,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(health.router, tags=["health"])
+    app.include_router(metrics.router, tags=["metrics"])
 
     v1 = APIRouter(prefix="/v1")
     v1.include_router(items.router, prefix="/items", tags=["items"])
