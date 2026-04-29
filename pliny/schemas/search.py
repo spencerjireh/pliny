@@ -24,6 +24,7 @@ class SearchResultItem(BaseModel):
     captured_at: datetime
     score: float | None = None
     matching_chunks: list[MatchingChunk] = []
+    possible_duplicate_of: UUID | None = None
 
 
 class SearchResponse(BaseModel):

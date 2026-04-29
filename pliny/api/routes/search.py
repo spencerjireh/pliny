@@ -126,7 +126,9 @@ async def _materialize_items(
         (
             await db.execute(
                 sql_text(
-                    "SELECT id, title, summary, type, captured_at FROM items WHERE id = ANY(:ids)"
+                    "SELECT id, title, summary, type, captured_at, "
+                    "metadata->>'possible_duplicate_of' AS possible_duplicate_of "
+                    "FROM items WHERE id = ANY(:ids)"
                 ),
                 {"ids": [str(i) for i in ordered_ids]},
             )
@@ -232,7 +234,8 @@ async def _browse(
         qparams["c_at"] = cursor_obj.captured_at
         qparams["c_id"] = str(cursor_obj.id)
     sql = (
-        "SELECT i.id, i.title, i.summary, i.type, i.captured_at "
+        "SELECT i.id, i.title, i.summary, i.type, i.captured_at, "
+        "i.metadata->>'possible_duplicate_of' AS possible_duplicate_of "
         f"FROM items i WHERE ({') AND ('.join(where)}) "
         "ORDER BY i.captured_at DESC, i.id DESC LIMIT :lim"
     )
@@ -245,6 +248,7 @@ async def _browse(
             summary=r["summary"],
             type=r["type"],
             captured_at=r["captured_at"],
+            possible_duplicate_of=r["possible_duplicate_of"],
         )
         for r in page
     ]
@@ -326,6 +330,7 @@ async def _hybrid_search(
                 captured_at=m["captured_at"],
                 score=score,
                 matching_chunks=chunks,
+                possible_duplicate_of=m["possible_duplicate_of"],
             )
         )
 

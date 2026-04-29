@@ -357,6 +357,15 @@ async def test_filter_possible_duplicate(
     body = r.json()
     titles = [item["title"] for item in body["items"]]
     assert titles == ["Twin B (dup)"]
+    assert body["items"][0]["possible_duplicate_of"] == str(twin)
+
+    # Items without the marker still expose the field as null on browse + search.
+    r = await client.get("/v1/search", headers=auth_headers)
+    body = r.json()
+    by_title = {item["title"]: item for item in body["items"]}
+    assert by_title["Twin B (dup)"]["possible_duplicate_of"] == str(twin)
+    assert by_title["Solo"]["possible_duplicate_of"] is None
+    assert by_title["Twin A"]["possible_duplicate_of"] is None
 
 
 async def test_filter_tag(
