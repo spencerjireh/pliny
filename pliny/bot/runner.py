@@ -10,7 +10,7 @@ from pliny.bot.telegram_api import TelegramClient
 from pliny.logging import get_logger
 
 _GET_UPDATES_BACKOFF_S = 2.0
-_SHUTDOWN_GRACE_S = 10.0
+SHUTDOWN_GRACE_S = 10.0
 # Tiny yield between empty get_updates calls. In production the long-poll
 # already blocks for ~30s so this is invisible; in tests with mocked instant
 # responses it prevents the loop from starving worker tasks.
@@ -72,7 +72,7 @@ async def run_bot(
     finally:
         log.info("bot_shutdown_requested")
         if pollers:
-            await asyncio.wait(pollers, timeout=_SHUTDOWN_GRACE_S)
+            await asyncio.wait(pollers, timeout=SHUTDOWN_GRACE_S)
             for t in pollers:
                 if not t.done():
                     t.cancel()

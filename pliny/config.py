@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     slow_worker_concurrency: int = Field(default=2)
     stage_timeout_seconds: int = Field(default=900)
 
+    # Default deployment colocates the fast worker pool and bot in the API
+    # process. Set false to run `pliny worker --pool fast` / `pliny bot` as
+    # separate processes — do not run both an embedded and a standalone fast
+    # pool against the same DB; they will contend for the same `pool='fast'`
+    # claim queue.
+    embed_bot: bool = Field(default=True)
+    embed_fast_worker: bool = Field(default=True)
+
     cors_allowed_origins: str = Field(default="")
 
 

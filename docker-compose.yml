@@ -45,6 +45,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       RUSTFS_ENDPOINT: http://rustfs:9000
       BLOB_ROOT: /var/lib/pliny/blob
+      PLINY_API_BASE_URL: http://localhost:8000
     command: ["sh", "-c", "alembic upgrade head && pliny api"]
     ports:
       - "8000:8000"
@@ -61,27 +62,10 @@ services:
       timeout: 5s
       retries: 6
 
-  fast-worker:
-    build:
-      context: .
-      dockerfile: docker/workers.Dockerfile
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql+psycopg://pliny:pliny@postgres:5432/pliny
-      NEO4J_URI: bolt://neo4j:7687
-      RUSTFS_ENDPOINT: http://rustfs:9000
-      BLOB_ROOT: /var/lib/pliny/blob
-    command: ["pliny", "worker", "--pool", "fast"]
-    volumes:
-      - blob_data:/var/lib/pliny/blob
-    depends_on:
-      api:
-        condition: service_healthy
-
   slow-worker:
     build:
       context: .
-      dockerfile: docker/workers.Dockerfile
+      dockerfile: docker/api.Dockerfile
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://pliny:pliny@postgres:5432/pliny
@@ -91,17 +75,6 @@ services:
     command: ["pliny", "worker", "--pool", "slow"]
     volumes:
       - blob_data:/var/lib/pliny/blob
-    depends_on:
-      api:
-        condition: service_healthy
-
-  bot:
-    build:
-      context: .
-      dockerfile: docker/bot.Dockerfile
-    env_file: .env
-    environment:
-      PLINY_API_BASE_URL: http://api:8000
     depends_on:
       api:
         condition: service_healthy

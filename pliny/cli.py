@@ -20,21 +20,11 @@ def _run_api() -> None:
     )
 
 
-def _import_stages() -> None:
-    """Side-effect import: registers every pipeline stage handler."""
-    import pliny.pipeline.chunk  # pyright: ignore[reportUnusedImport]
-    import pliny.pipeline.embed  # pyright: ignore[reportUnusedImport]
-    import pliny.pipeline.entities  # pyright: ignore[reportUnusedImport]
-    import pliny.pipeline.extract  # pyright: ignore[reportUnusedImport]
-    import pliny.pipeline.graph_sync  # pyright: ignore[reportUnusedImport]
-    import pliny.pipeline.snapshot  # pyright: ignore[reportUnusedImport]
-    import pliny.pipeline.summarize  # pyright: ignore[reportUnusedImport]
-    import pliny.pipeline.wayback_fallback  # noqa: F401  # pyright: ignore[reportUnusedImport]
-
-
 async def _run_worker_async(pool: Literal["fast", "slow"]) -> None:
     configure_logging()
-    _import_stages()
+    from pliny.pipeline import import_stages
+
+    import_stages()
     log = get_logger("pliny.cli")
     settings = get_settings()
     from pliny.api import deps
@@ -82,12 +72,10 @@ def _run_bot() -> None:
     if not settings.telegram_bot_token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is not set")
 
-    from pliny.bot.config import parse_allowed_user_ids
+    from pliny.bot.config import load_allowed_user_ids
     from pliny.bot.runner import run_bot
 
-    allowed = parse_allowed_user_ids(settings.telegram_allowed_user_ids)
-    if not allowed:
-        log.warning("no_allowed_user_ids; bot will drop every message")
+    allowed = load_allowed_user_ids(settings.telegram_allowed_user_ids, log)
 
     asyncio.run(
         run_bot(

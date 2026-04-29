@@ -1,3 +1,6 @@
+import logging
+
+
 def parse_allowed_user_ids(raw: str) -> frozenset[int]:
     """Parse a comma-separated list of Telegram user IDs.
 
@@ -14,3 +17,15 @@ def parse_allowed_user_ids(raw: str) -> frozenset[int]:
         except ValueError as e:
             raise ValueError(f"invalid telegram user id: {s!r}") from e
     return frozenset(out)
+
+
+def load_allowed_user_ids(
+    raw: str,
+    log: logging.LoggerAdapter[logging.Logger],
+    *,
+    event: str = "no_allowed_user_ids; bot will drop every message",
+) -> frozenset[int]:
+    allowed = parse_allowed_user_ids(raw)
+    if not allowed:
+        log.warning(event)
+    return allowed
