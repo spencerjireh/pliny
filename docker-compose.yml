@@ -25,18 +25,99 @@ services:
     volumes:
       - neo4j_data:/data
 
-  # rustfs: enable in step 10 (snapshot)
-  # rustfs:
-  #   image: rustfs/rustfs:latest
-  #   environment:
-  #     RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
-  #     RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
-  #   ports:
-  #     - "9000:9000"
-  #   volumes:
-  #     - rustfs_data:/data
+  rustfs:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+    ports:
+      - "9000:9000"
+    volumes:
+      - rustfs_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://pliny:pliny@postgres:5432/pliny
+      NEO4J_URI: bolt://neo4j:7687
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      BLOB_ROOT: /var/lib/pliny/blob
+    command: ["sh", "-c", "alembic upgrade head && pliny api"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - blob_data:/var/lib/pliny/blob
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  fast-worker:
+    build:
+      context: .
+      dockerfile: docker/workers.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://pliny:pliny@postgres:5432/pliny
+      NEO4J_URI: bolt://neo4j:7687
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      BLOB_ROOT: /var/lib/pliny/blob
+    command: ["pliny", "worker", "--pool", "fast"]
+    volumes:
+      - blob_data:/var/lib/pliny/blob
+    depends_on:
+      api:
+        condition: service_healthy
+
+  slow-worker:
+    build:
+      context: .
+      dockerfile: docker/workers.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://pliny:pliny@postgres:5432/pliny
+      NEO4J_URI: bolt://neo4j:7687
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      BLOB_ROOT: /var/lib/pliny/blob
+    command: ["pliny", "worker", "--pool", "slow"]
+    volumes:
+      - blob_data:/var/lib/pliny/blob
+    depends_on:
+      api:
+        condition: service_healthy
+
+  bot:
+    build:
+      context: .
+      dockerfile: docker/bot.Dockerfile
+    env_file: .env
+    environment:
+      PLINY_API_BASE_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:
   neo4j_data:
-  # rustfs_data:
+  rustfs_data:
+  blob_data:
