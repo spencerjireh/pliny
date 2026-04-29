@@ -286,7 +286,9 @@ async def get_item(
     tag_rows = (
         (
             await db.execute(
-                select(Tag).join(ItemTag, ItemTag.tag_id == Tag.id).where(ItemTag.item_id == item_id)
+                select(Tag)
+                .join(ItemTag, ItemTag.tag_id == Tag.id)
+                .where(ItemTag.item_id == item_id)
             )
         )
         .scalars()
@@ -303,9 +305,7 @@ async def get_item(
         "content_hash": item.content_hash,
         "raw_ref": item.raw_ref,
         "metadata": item.meta or {},
-        "content": (
-            {"extracted_text": content.extracted_text} if content is not None else None
-        ),
+        "content": ({"extracted_text": content.extracted_text} if content is not None else None),
         "chunks": [{"index": c.chunk_index, "text": c.text} for c in chunks],
         "sources": [
             {
